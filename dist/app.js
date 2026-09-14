@@ -45,6 +45,56 @@ const eventTypes = {
   other: { label: "Diğer", color: "#8f7482", icon: "·" }
 };
 
+const mediaCatalog = [
+  { id: "catalog-mcu-iron-man", title: "Iron Man", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-incredible-hulk", title: "The Incredible Hulk", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-iron-man-2", title: "Iron Man 2", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-thor", title: "Thor", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-captain-america-first-avenger", title: "Captain America: The First Avenger", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-avengers", title: "The Avengers", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-iron-man-3", title: "Iron Man 3", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-thor-dark-world", title: "Thor: The Dark World", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-captain-america-winter-soldier", title: "Captain America: The Winter Soldier", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-guardians-galaxy", title: "Guardians of the Galaxy", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-avengers-age-ultron", title: "Avengers: Age of Ultron", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-ant-man", title: "Ant-Man", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-civil-war", title: "Captain America: Civil War", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-doctor-strange", title: "Doctor Strange", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-guardians-galaxy-2", title: "Guardians of the Galaxy Vol. 2", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-spider-man-homecoming", title: "Spider-Man: Homecoming", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-thor-ragnarok", title: "Thor: Ragnarok", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-black-panther", title: "Black Panther", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-infinity-war", title: "Avengers: Infinity War", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-ant-man-wasp", title: "Ant-Man and the Wasp", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-captain-marvel", title: "Captain Marvel", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-endgame", title: "Avengers: Endgame", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-spider-man-far-home", title: "Spider-Man: Far From Home", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-black-widow", title: "Black Widow", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-shang-chi", title: "Shang-Chi and the Legend of the Ten Rings", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-eternals", title: "Eternals", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-spider-man-no-way-home", title: "Spider-Man: No Way Home", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-doctor-strange-multiverse", title: "Doctor Strange in the Multiverse of Madness", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-thor-love-thunder", title: "Thor: Love and Thunder", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-wakanda-forever", title: "Black Panther: Wakanda Forever", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-quantumania", title: "Ant-Man and the Wasp: Quantumania", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-guardians-galaxy-3", title: "Guardians of the Galaxy Vol. 3", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-the-marvels", title: "The Marvels", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-deadpool-wolverine", title: "Deadpool & Wolverine", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-captain-america-brave-new-world", title: "Captain America: Brave New World", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-thunderbolts", title: "Thunderbolts*", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-fantastic-four-first-steps", title: "The Fantastic Four: First Steps", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-mcu-spider-man-brand-new-day", title: "Spider-Man: Brand New Day", type: "movie", collection: "Marvel · MCU" },
+  { id: "catalog-avatar-last-airbender", title: "Avatar: Der Herr der Elemente", type: "series", collection: "Avatar" },
+  { id: "catalog-hp-philosophers-stone", title: "Harry Potter und der Stein der Weisen", type: "movie", collection: "Harry Potter" },
+  { id: "catalog-hp-chamber-secrets", title: "Harry Potter und die Kammer des Schreckens", type: "movie", collection: "Harry Potter" },
+  { id: "catalog-hp-prisoner-azkaban", title: "Harry Potter und der Gefangene von Askaban", type: "movie", collection: "Harry Potter" },
+  { id: "catalog-hp-goblet-fire", title: "Harry Potter und der Feuerkelch", type: "movie", collection: "Harry Potter" },
+  { id: "catalog-hp-order-phoenix", title: "Harry Potter und der Orden des Phönix", type: "movie", collection: "Harry Potter" },
+  { id: "catalog-hp-half-blood-prince", title: "Harry Potter und der Halbblutprinz", type: "movie", collection: "Harry Potter" },
+  { id: "catalog-hp-deathly-hallows-1", title: "Harry Potter und die Heiligtümer des Todes – Teil 1", type: "movie", collection: "Harry Potter" },
+  { id: "catalog-hp-deathly-hallows-2", title: "Harry Potter und die Heiligtümer des Todes – Teil 2", type: "movie", collection: "Harry Potter" }
+];
+
 const authScreen = document.querySelector("#auth-screen");
 const setupForm = document.querySelector("#setup-form");
 const unlockForm = document.querySelector("#unlock-form");
@@ -67,6 +117,7 @@ let selectedDate = localISO(new Date());
 let prayerDate = selectedDate;
 let calendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let watchFilter = "all";
+let watchSort = "desc";
 let saveQueue = Promise.resolve();
 let toastTimer = null;
 let autoLockTimer = null;
@@ -126,6 +177,7 @@ async function deriveKey(pin, salt) {
 }
 
 function initialState(name) {
+  const createdAt = new Date().toISOString();
   return {
     version: 1,
     profile: { name: name.trim(), birthday: BIRTHDAY, createdAt: new Date().toISOString() },
@@ -143,10 +195,28 @@ function initialState(name) {
       }
     ],
     diary: [],
-    watchlist: [],
+    watchlist: mediaCatalog.map((item) => ({ ...item, status: "planned", rating: 0, notes: "", updatedAt: createdAt })),
+    mediaCatalogVersion: 1,
     prayers: {},
     updatedAt: new Date().toISOString()
   };
+}
+
+function normalizeMediaTitle(title) {
+  return String(title || "").normalize("NFKC").trim().toLocaleLowerCase("tr-TR");
+}
+
+function applyMediaCatalogMigration() {
+  state.watchlist ||= [];
+  if ((state.mediaCatalogVersion || 0) >= 1) return false;
+  const existingTitles = new Set(state.watchlist.map((item) => normalizeMediaTitle(item.title)));
+  const updatedAt = new Date().toISOString();
+  mediaCatalog.forEach((item) => {
+    if (existingTitles.has(normalizeMediaTitle(item.title))) return;
+    state.watchlist.push({ ...item, status: "planned", rating: 0, notes: "", updatedAt });
+  });
+  state.mediaCatalogVersion = 1;
+  return true;
 }
 
 async function encryptSnapshot(snapshot) {
@@ -382,13 +452,18 @@ function renderDiary() {
 
 function renderWatch() {
   const filtered = state.watchlist.filter((item) => watchFilter === "all" || item.status === watchFilter);
+  const sorted = [...filtered].sort((first, second) => {
+    const ratingDifference = Number(first.rating || 0) - Number(second.rating || 0);
+    if (ratingDifference) return watchSort === "asc" ? ratingDifference : -ratingDifference;
+    return first.title.localeCompare(second.title, "tr-TR");
+  });
   const watched = state.watchlist.filter((item) => item.status === "watched").length;
   viewContainer.innerHTML = `
     ${headerHTML("Küçük arşivin", "İzlediklerim", `${watched} yapım tamamlandı · ${state.watchlist.length} toplam`, `<button class="solid-button" data-action="new-media">+ <span class="hide-mobile">Film / dizi</span></button>`)}
-    <div class="filter-row"><button class="filter-button ${watchFilter === "all" ? "active" : ""}" data-action="filter-media" data-filter="all">Tümü</button><button class="filter-button ${watchFilter === "watching" ? "active" : ""}" data-action="filter-media" data-filter="watching">İzliyorum</button><button class="filter-button ${watchFilter === "planned" ? "active" : ""}" data-action="filter-media" data-filter="planned">Listemde</button><button class="filter-button ${watchFilter === "watched" ? "active" : ""}" data-action="filter-media" data-filter="watched">İzledim</button></div>
-    <div class="media-list">${filtered.length ? filtered.map((item) => {
+    <div class="filter-row"><button class="filter-button ${watchFilter === "all" ? "active" : ""}" data-action="filter-media" data-filter="all">Tümü</button><button class="filter-button ${watchFilter === "watching" ? "active" : ""}" data-action="filter-media" data-filter="watching">İzliyorum</button><button class="filter-button ${watchFilter === "planned" ? "active" : ""}" data-action="filter-media" data-filter="planned">Listemde</button><button class="filter-button ${watchFilter === "watched" ? "active" : ""}" data-action="filter-media" data-filter="watched">İzledim</button><button class="filter-button" data-action="sort-media" data-sort="${watchSort === "desc" ? "asc" : "desc"}" title="Puan sırasını değiştir">Puan ${watchSort === "desc" ? "↓" : "↑"}</button></div>
+    <div class="media-list">${sorted.length ? sorted.map((item) => {
       const statusLabels = { watched: "İzledim", watching: "İzliyorum", planned: "Listemde" };
-      return `<article class="surface media-card"><div class="media-cover">${escapeHTML(item.title.charAt(0).toLocaleUpperCase("tr-TR"))}</div><div class="media-meta"><h2>${escapeHTML(item.title)}</h2><p>${item.type === "series" ? "Dizi" : "Film"} · ${statusLabels[item.status]}</p>${item.rating ? `<p class="stars">${"★".repeat(item.rating)}${"☆".repeat(5 - item.rating)}</p>` : ""}${item.notes ? `<p>${escapeHTML(item.notes)}</p>` : ""}<div class="media-tags"><span class="tag">${statusLabels[item.status]}</span><button class="tiny-button" data-action="edit-media" data-id="${item.id}" aria-label="Düzenle">✎</button><button class="tiny-button" data-action="delete-media" data-id="${item.id}" aria-label="Sil">×</button></div></div></article>`;
+      return `<article class="surface media-card"><div class="media-cover">${escapeHTML(item.title.charAt(0).toLocaleUpperCase("tr-TR"))}</div><div class="media-meta"><h2>${escapeHTML(item.title)}</h2><p>${item.type === "series" ? "Dizi" : "Film"} · ${statusLabels[item.status]}</p>${item.rating ? `<p class="stars">${"★".repeat(item.rating)}${"☆".repeat(5 - item.rating)}</p>` : `<p>Henüz puanlanmadı</p>`}${item.notes ? `<p>${escapeHTML(item.notes)}</p>` : ""}<div class="media-tags">${item.collection ? `<span class="tag">${escapeHTML(item.collection)}</span>` : ""}<span class="tag">${statusLabels[item.status]}</span><button class="tiny-button" data-action="edit-media" data-id="${item.id}" aria-label="Düzenle">✎</button><button class="tiny-button" data-action="delete-media" data-id="${item.id}" aria-label="Sil">×</button></div></div></article>`;
     }).join("") : emptyHTML("▷", "Bu bölüm henüz boş. İlk film veya dizini ekle.")}</div>`;
 }
 
@@ -655,6 +730,7 @@ unlockForm.addEventListener("submit", async (event) => {
   authError.hidden = true;
   try {
     await unlockVault(document.querySelector("#unlock-pin").value);
+    if (applyMediaCatalogMigration()) await queueSave();
     unlockForm.reset();
     enterApp();
   } catch {
@@ -670,7 +746,7 @@ document.addEventListener("click", async (event) => {
   if (nav) return setView(nav.dataset.view);
   const action = event.target.closest("[data-action]");
   if (!action || !state) return;
-  const { id, date, prayer, filter } = action.dataset;
+  const { id, date, prayer, filter, sort } = action.dataset;
   switch (action.dataset.action) {
     case "lock": lockApp(); break;
     case "new-event": openEventForm(null, date || selectedDate); break;
@@ -686,6 +762,7 @@ document.addEventListener("click", async (event) => {
     case "edit-media": openMediaForm(id); break;
     case "delete-media": await deleteById("watchlist", id, "Kayıt listeden silindi."); break;
     case "filter-media": watchFilter = filter; renderWatch(); break;
+    case "sort-media": watchSort = sort; renderWatch(); break;
     case "toggle-prayer": await togglePrayer(date, prayer); break;
     case "prayer-prev": prayerDate = localISO(addDays(parseISO(prayerDate), -1)); renderPrayer(); break;
     case "prayer-next": prayerDate = localISO(addDays(parseISO(prayerDate), 1)); renderPrayer(); break;
