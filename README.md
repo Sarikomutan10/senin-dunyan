@@ -7,7 +7,9 @@
 - Çalışma, regl, izin/tatil, randevu ve diğer kayıtlar için aylık takvim
 - 16 Nisan 2027 resmî nikâh günü
 - Şifreli kişisel günlük
-- Puan sıralamalı film ve dizi arşivi; MCU, Harry Potter ve Avatar başlangıç kataloğu
+- Almanca/Türkçe arasında anında dil seçimi
+- 0,0–10,0 puan sıralamalı, film/dizi sekmeli medya arşivi
+- MCU, Harry Potter, Avatar, Naruto, One Piece ve kişisel izleme listesi dahil 213 başlangıç kaydı
 - Beş vakit namaz takibi
 - Kaynak bilgili günlük hadis
 - 21 Eylül 2026 doğum günü sayacı ve özel mesajı

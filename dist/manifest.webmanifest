@@ -1,8 +1,8 @@
 {
   "name": "Senin Dünyan",
   "short_name": "Dünyan",
-  "description": "Takvimin, günlüğün ve güzel anların için sana özel bir alan.",
-  "lang": "tr",
+  "description": "Dein persönlicher Ort für Kalender, Tagebuch und schöne Erinnerungen – auf Deutsch und Türkisch.",
+  "lang": "de",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

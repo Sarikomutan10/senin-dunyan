@@ -1,5 +1,5 @@
-const CACHE_NAME = "senin-dunyan-v2";
-const APP_FILES = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.webmanifest", "./assets/app-icon.svg"];
+const CACHE_NAME = "senin-dunyan-v3";
+const APP_FILES = ["./", "./index.html", "./styles.css", "./i18n.js", "./catalog.js", "./app.js", "./manifest.webmanifest", "./assets/app-icon.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_FILES)));

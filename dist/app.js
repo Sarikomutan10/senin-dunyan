@@ -1,7 +1,35 @@
 "use strict";
 
 const STORAGE_KEY = "senin-dunyan-vault-v1";
+const LANGUAGE_KEY = "senin-dunyan-language";
 const BIRTHDAY = "2026-09-21";
+const i18n = window.SENIN_DUNYAN_I18N;
+let uiLanguage = localStorage.getItem(LANGUAGE_KEY) === "tr" ? "tr" : "de";
+
+function t(key, values = {}) {
+  let text = i18n[uiLanguage]?.[key] ?? i18n.de[key] ?? key;
+  Object.entries(values).forEach(([name, value]) => { text = text.replaceAll(`{${name}}`, value); });
+  return text;
+}
+
+function translateStaticUI() {
+  document.documentElement.lang = uiLanguage;
+  document.querySelector('meta[name="description"]').content = t("meta.description");
+  document.querySelectorAll("[data-i18n]").forEach((element) => { element.textContent = t(element.dataset.i18n); });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach((element) => { element.placeholder = t(element.dataset.i18nPlaceholder); });
+  document.querySelectorAll("[data-i18n-aria-label]").forEach((element) => { element.setAttribute("aria-label", t(element.dataset.i18nAriaLabel)); });
+  document.querySelectorAll("[data-language]").forEach((button) => button.classList.toggle("active", button.dataset.language === uiLanguage));
+}
+
+function setLanguage(language) {
+  if (!i18n[language]) return;
+  uiLanguage = language;
+  localStorage.setItem(LANGUAGE_KEY, language);
+  translateStaticUI();
+  if (dialog.open) closeDialog();
+  if (state) renderCurrentView();
+}
+
 const prayers = [
   { id: "sabah", name: "Sabah", note: "Güne huzurla başla", symbol: "☼" },
   { id: "ogle", name: "Öğle", note: "Günün ortasında dur", symbol: "◐" },
@@ -94,6 +122,7 @@ const mediaCatalog = [
   { id: "catalog-hp-deathly-hallows-1", title: "Harry Potter und die Heiligtümer des Todes – Teil 1", type: "movie", collection: "Harry Potter" },
   { id: "catalog-hp-deathly-hallows-2", title: "Harry Potter und die Heiligtümer des Todes – Teil 2", type: "movie", collection: "Harry Potter" }
 ];
+const completeMediaCatalog = [...mediaCatalog, ...(window.SENIN_DUNYAN_EXTRA_MEDIA || [])];
 
 const authScreen = document.querySelector("#auth-screen");
 const setupForm = document.querySelector("#setup-form");
@@ -117,6 +146,7 @@ let selectedDate = localISO(new Date());
 let prayerDate = selectedDate;
 let calendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let watchFilter = "all";
+let watchTypeFilter = "all";
 let watchSort = "desc";
 let saveQueue = Promise.resolve();
 let toastTimer = null;
@@ -142,7 +172,23 @@ function addDays(date, amount) {
 
 function formatDate(value, options = { weekday: "long", day: "numeric", month: "long" }) {
   const date = typeof value === "string" ? parseISO(value) : value;
-  return new Intl.DateTimeFormat("tr-TR", options).format(date);
+  return new Intl.DateTimeFormat(uiLanguage === "tr" ? "tr-TR" : "de-DE", options).format(date);
+}
+
+function formatRating(value) {
+  return new Intl.NumberFormat(uiLanguage === "tr" ? "tr-TR" : "de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value);
+}
+
+function eventTypeLabel(type) {
+  return t(`event.${type}`);
+}
+
+function prayerName(prayer) {
+  return t(`prayer.${prayer.id}`);
+}
+
+function prayerNote(prayer) {
+  return t(`prayer.${prayer.id}Note`);
 }
 
 function escapeHTML(value = "") {
@@ -195,8 +241,9 @@ function initialState(name) {
       }
     ],
     diary: [],
-    watchlist: mediaCatalog.map((item) => ({ ...item, status: "planned", rating: 0, notes: "", updatedAt: createdAt })),
-    mediaCatalogVersion: 1,
+    watchlist: completeMediaCatalog.map((item) => ({ ...item, status: "planned", rating: null, notes: "", updatedAt: createdAt })),
+    mediaCatalogVersion: 2,
+    ratingScaleVersion: 2,
     prayers: {},
     updatedAt: new Date().toISOString()
   };
@@ -206,16 +253,25 @@ function normalizeMediaTitle(title) {
   return String(title || "").normalize("NFKC").trim().toLocaleLowerCase("tr-TR");
 }
 
-function applyMediaCatalogMigration() {
+function applyDataMigrations() {
   state.watchlist ||= [];
-  if ((state.mediaCatalogVersion || 0) >= 1) return false;
+  let changed = false;
+  if ((state.ratingScaleVersion || 0) < 2) {
+    state.watchlist.forEach((item) => {
+      const oldRating = Number(item.rating || 0);
+      item.rating = oldRating > 0 ? Math.min(10, oldRating * 2) : null;
+    });
+    state.ratingScaleVersion = 2;
+    changed = true;
+  }
+  if ((state.mediaCatalogVersion || 0) >= 2) return changed;
   const existingTitles = new Set(state.watchlist.map((item) => normalizeMediaTitle(item.title)));
   const updatedAt = new Date().toISOString();
-  mediaCatalog.forEach((item) => {
+  completeMediaCatalog.forEach((item) => {
     if (existingTitles.has(normalizeMediaTitle(item.title))) return;
-    state.watchlist.push({ ...item, status: "planned", rating: 0, notes: "", updatedAt });
+    state.watchlist.push({ ...item, status: "planned", rating: null, notes: "", updatedAt });
   });
-  state.mediaCatalogVersion = 1;
+  state.mediaCatalogVersion = 2;
   return true;
 }
 
@@ -234,7 +290,7 @@ async function encryptSnapshot(snapshot) {
 function queueSave() {
   state.updatedAt = new Date().toISOString();
   const snapshot = JSON.stringify(state);
-  saveQueue = saveQueue.then(() => encryptSnapshot(snapshot)).catch(() => showToast("Kaydedilemedi. Lütfen tekrar dene."));
+  saveQueue = saveQueue.then(() => encryptSnapshot(snapshot)).catch(() => showToast(t("toast.saveFailed")));
   return saveQueue;
 }
 
@@ -340,12 +396,12 @@ function birthdayHTML() {
   const birthday = parseISO(BIRTHDAY);
   const distance = Math.round((birthday - today) / 86400000);
   if (distance > 0) {
-    return `<article class="surface birthday-card"><p class="eyebrow">Doğum gününe</p><h2>${distance} gün kaldı</h2><p>21 Eylül yaklaşıyor. Bu küçük dünya, güzel günlerini biriktirsin diye hazırlandı.</p><div class="countdown-row"><div class="countdown-chip"><strong>${distance}</strong><small>gün</small></div><div class="countdown-chip"><strong>21</strong><small>eylül</small></div><div class="countdown-chip"><strong>♡</strong><small>senin</small></div></div></article>`;
+    return `<article class="surface birthday-card"><p class="eyebrow">${t("birthday.until")}</p><h2>${t("birthday.daysLeft", { count: distance })}</h2><p>${t("birthday.approaches")}</p><div class="countdown-row"><div class="countdown-chip"><strong>${distance}</strong><small>${t("birthday.days")}</small></div><div class="countdown-chip"><strong>21</strong><small>${t("birthday.september")}</small></div><div class="countdown-chip"><strong>♡</strong><small>${t("birthday.yours")}</small></div></div></article>`;
   }
   if (distance === 0) {
-    return `<article class="surface birthday-card"><p class="eyebrow">Bugün senin günün</p><h2>İyi ki doğdun!</h2><p>Hayatıma kattığın her güzellik için teşekkür ederim. Gülüşün hiç eksilmesin, kalbin hep huzurla dolsun.</p><div class="birthday-message"><strong>Seni çok seviyorum ♡</strong><span>Bugün ve her gün, iyi ki varsın.</span></div></article>`;
+    return `<article class="surface birthday-card"><p class="eyebrow">${t("birthday.yourDay")}</p><h2>${t("birthday.happy")}</h2><p>${t("birthday.message")}</p><div class="birthday-message"><strong>${t("birthday.love")}</strong><span>${t("birthday.always")}</span></div></article>`;
   }
-  return `<article class="surface birthday-card"><p class="eyebrow">21 · 09 · 2026</p><h2>İyi ki doğdun</h2><p>Bu küçük dünya o güzel günün hatırası; yeni anılarla büyümeye devam etsin.</p></article>`;
+  return `<article class="surface birthday-card"><p class="eyebrow">21 · 09 · 2026</p><h2>${t("birthday.happy")}</h2><p>${t("birthday.memory")}</p></article>`;
 }
 
 function getDailyHadith() {
@@ -363,7 +419,7 @@ function eventTime(event) {
   if (event.startTime && event.endTime) return `${event.startTime}–${event.endTime}`;
   if (event.startTime) return event.startTime;
   if (event.startDate !== event.endDate) return `${formatDate(event.startDate, { day: "numeric", month: "short" })}–${formatDate(event.endDate, { day: "numeric", month: "short" })}`;
-  return eventTypes[event.type]?.label || "Kayıt";
+  return eventTypes[event.type] ? eventTypeLabel(event.type) : t("common.entry");
 }
 
 function emptyHTML(icon, text) {
@@ -373,7 +429,7 @@ function emptyHTML(icon, text) {
 function renderToday() {
   const today = localISO(new Date());
   const hour = new Date().getHours();
-  const greeting = hour < 11 ? "Günaydın" : hour < 18 ? "Güzel bir gün" : "İyi akşamlar";
+  const greeting = hour < 11 ? t("today.morning") : hour < 18 ? t("today.day") : t("today.evening");
   const checked = prayers.filter((prayer) => state.prayers[today]?.[prayer.id]).length;
   const hadith = getDailyHadith();
   const upcoming = state.events
@@ -382,25 +438,25 @@ function renderToday() {
     .slice(0, 4);
 
   viewContainer.innerHTML = `
-    ${headerHTML("Bugün", `${greeting}, ${escapeHTML(state.profile.name)}`, formatDate(new Date()), `<button class="icon-button" data-action="lock" aria-label="Uygulamayı kilitle">⌁</button>`)}
+    ${headerHTML(t("nav.today"), `${greeting}, ${escapeHTML(state.profile.name)}`, formatDate(new Date()), `<button class="icon-button" data-action="lock" aria-label="${t("common.lock")}">⌁</button>`)}
     <div class="dashboard-grid">
       <div class="stack">
         ${birthdayHTML()}
         <section class="surface hadith-card">
-          <div class="section-heading"><div><h2>Günün hadisi</h2><p>Her güne küçük bir hatırlatma</p></div><span class="hadith-mark" aria-hidden="true">“</span></div>
-          <p class="hadith-text">${hadith.text}</p>
+          <div class="section-heading"><div><h2>${t("today.hadith")}</h2><p>${t("today.hadithHint")}</p></div><span class="hadith-mark" aria-hidden="true">“</span></div>
+          <p class="hadith-text">${uiLanguage === "de" ? i18n.hadithDe[hadiths.indexOf(hadith)] : hadith.text}</p>
           <p class="hadith-source">${hadith.source}</p>
         </section>
       </div>
       <div class="stack">
         <section class="surface surface-inner">
-          <div class="section-heading"><div><h2>Bugünün namazları</h2><p>${checked}/5 tamamlandı</p></div><button class="section-link" data-view="prayer">Detaylar</button></div>
-          <div class="prayer-summary"><div class="progress-ring" style="--progress:${checked * 72}deg"><strong>${checked}/5</strong></div><p class="view-subtitle">Her işaret, kendine ayırdığın huzurlu bir an.</p></div>
-          <div class="prayer-mini-list">${prayers.map((prayer) => `<button class="prayer-mini ${state.prayers[today]?.[prayer.id] ? "done" : ""}" data-action="toggle-prayer" data-prayer="${prayer.id}" data-date="${today}"><span>${state.prayers[today]?.[prayer.id] ? "✓" : prayer.symbol}</span>${prayer.name}</button>`).join("")}</div>
+          <div class="section-heading"><div><h2>${t("today.prayers")}</h2><p>${t("today.completed", { count: checked })}</p></div><button class="section-link" data-view="prayer">${t("common.details")}</button></div>
+          <div class="prayer-summary"><div class="progress-ring" style="--progress:${checked * 72}deg"><strong>${checked}/5</strong></div><p class="view-subtitle">${t("today.prayerHint")}</p></div>
+          <div class="prayer-mini-list">${prayers.map((prayer) => `<button class="prayer-mini ${state.prayers[today]?.[prayer.id] ? "done" : ""}" data-action="toggle-prayer" data-prayer="${prayer.id}" data-date="${today}"><span>${state.prayers[today]?.[prayer.id] ? "✓" : prayer.symbol}</span>${prayerName(prayer)}</button>`).join("")}</div>
         </section>
         <section class="surface surface-inner">
-          <div class="section-heading"><div><h2>Yaklaşanlar</h2><p>Takviminden</p></div><button class="section-link" data-action="new-event" data-date="${today}">Yeni ekle</button></div>
-          <div class="event-list">${upcoming.length ? upcoming.map((event) => eventRowHTML(event)).join("") : emptyHTML("◇", "Henüz yaklaşan bir kayıt yok.")}</div>
+          <div class="section-heading"><div><h2>${t("today.upcoming")}</h2><p>${t("today.fromCalendar")}</p></div><button class="section-link" data-action="new-event" data-date="${today}">${t("today.addNew")}</button></div>
+          <div class="event-list">${upcoming.length ? upcoming.map((event) => eventRowHTML(event)).join("") : emptyHTML("◇", t("today.noUpcoming"))}</div>
         </section>
       </div>
     </div>`;
@@ -408,7 +464,7 @@ function renderToday() {
 
 function eventRowHTML(event, withActions = false) {
   const type = eventTypes[event.type] || eventTypes.other;
-  return `<article class="list-row"><span class="list-icon" style="background:${type.color}20;color:${type.color}">${type.icon}</span><div><h3>${escapeHTML(event.title)}</h3><p>${formatDate(event.startDate, { day: "numeric", month: "short", year: "numeric" })} · ${eventTime(event)}</p></div>${withActions ? `<div class="row-actions"><button class="tiny-button" data-action="edit-event" data-id="${event.id}" aria-label="Düzenle">✎</button><button class="tiny-button" data-action="delete-event" data-id="${event.id}" aria-label="Sil">×</button></div>` : ""}</article>`;
+  return `<article class="list-row"><span class="list-icon" style="background:${type.color}20;color:${type.color}">${type.icon}</span><div><h3>${escapeHTML(event.title)}</h3><p>${formatDate(event.startDate, { day: "numeric", month: "short", year: "numeric" })} · ${eventTime(event)}</p></div>${withActions ? `<div class="row-actions"><button class="tiny-button" data-action="edit-event" data-id="${event.id}" aria-label="${t("common.edit")}">✎</button><button class="tiny-button" data-action="delete-event" data-id="${event.id}" aria-label="${t("common.delete")}">×</button></div>` : ""}</article>`;
 }
 
 function renderCalendar() {
@@ -422,23 +478,23 @@ function renderCalendar() {
   const monthLabel = formatDate(first, { month: "long", year: "numeric" });
 
   viewContainer.innerHTML = `
-    ${headerHTML("Planın", "Takvim", "Çalışma, izin, regl günleri ve tüm planların.", `<button class="solid-button" data-action="new-event" data-date="${selectedDate}">+ <span class="hide-mobile">Yeni kayıt</span></button>`)}
+    ${headerHTML(t("calendar.eyebrow"), t("nav.calendar"), t("calendar.subtitle"), `<button class="solid-button" data-action="new-event" data-date="${selectedDate}">+ <span class="hide-mobile">${t("calendar.new")}</span></button>`)}
     <div class="calendar-layout">
       <section class="surface calendar-card">
-        <div class="calendar-toolbar"><h2>${monthLabel}</h2><div class="calendar-arrows"><button class="icon-button" data-action="calendar-prev" aria-label="Önceki ay">‹</button><button class="icon-button" data-action="calendar-next" aria-label="Sonraki ay">›</button></div></div>
-        <div class="calendar-weekdays"><span>Pzt</span><span>Sal</span><span>Çar</span><span>Per</span><span>Cum</span><span>Cmt</span><span>Paz</span></div>
+        <div class="calendar-toolbar"><h2>${monthLabel}</h2><div class="calendar-arrows"><button class="icon-button" data-action="calendar-prev" aria-label="${t("calendar.previousMonth")}">‹</button><button class="icon-button" data-action="calendar-next" aria-label="${t("calendar.nextMonth")}">›</button></div></div>
+        <div class="calendar-weekdays">${t("calendar.weekdays").split(",").map((day) => `<span>${day}</span>`).join("")}</div>
         <div class="calendar-grid">${days.map((day) => {
           const iso = localISO(day);
           const dayEvents = eventsForDate(iso);
           const classes = ["day-cell", day.getMonth() !== month ? "outside" : "", iso === localISO(new Date()) ? "today" : "", iso === selectedDate ? "selected" : ""].filter(Boolean).join(" ");
           return `<button class="${classes}" data-action="select-day" data-date="${iso}"><span class="day-number">${day.getDate()}</span><span class="event-dots">${dayEvents.slice(0, 4).map((event) => `<i class="event-dot" style="--dot:${eventTypes[event.type]?.color || eventTypes.other.color}"></i>`).join("")}</span>${dayEvents[0] ? `<span class="event-label">${escapeHTML(dayEvents[0].title)}</span>` : ""}</button>`;
         }).join("")}</div>
-        <div class="legend">${Object.values(eventTypes).map((type) => `<span><i style="--dot:${type.color}"></i>${type.label}</span>`).join("")}</div>
+        <div class="legend">${Object.entries(eventTypes).map(([key, type]) => `<span><i style="--dot:${type.color}"></i>${eventTypeLabel(key)}</span>`).join("")}</div>
       </section>
       <aside class="surface selected-day">
-        <p class="eyebrow">Seçili gün</p><h2 class="selected-day-date">${formatDate(selectedDate)}</h2>
-        <div class="event-list">${selectedEvents.length ? selectedEvents.map((event) => eventRowHTML(event, true)).join("") : emptyHTML("○", "Bu gün için henüz kayıt yok.")}</div>
-        <button class="solid-button" style="width:100%;margin-top:1rem" data-action="new-event" data-date="${selectedDate}">+ Bu güne ekle</button>
+        <p class="eyebrow">${t("calendar.selected")}</p><h2 class="selected-day-date">${formatDate(selectedDate)}</h2>
+        <div class="event-list">${selectedEvents.length ? selectedEvents.map((event) => eventRowHTML(event, true)).join("") : emptyHTML("○", t("calendar.empty"))}</div>
+        <button class="solid-button" style="width:100%;margin-top:1rem" data-action="new-event" data-date="${selectedDate}">+ ${t("calendar.addDay")}</button>
       </aside>
     </div>`;
 }
@@ -446,25 +502,40 @@ function renderCalendar() {
 function renderDiary() {
   const entries = [...state.diary].sort((a, b) => b.date.localeCompare(a.date) || b.updatedAt.localeCompare(a.updatedAt));
   viewContainer.innerHTML = `
-    ${headerHTML("Kendine ait", "Günlük", "Düşüncelerin burada güvende.", `<button class="solid-button" data-action="new-diary">+ <span class="hide-mobile">Yeni sayfa</span></button>`)}
-    <div class="diary-grid">${entries.length ? entries.map((entry) => `<article class="surface diary-card" data-action="edit-diary" data-id="${entry.id}"><span class="mood">${entry.mood}</span><time>${formatDate(entry.date, { day: "numeric", month: "long", year: "numeric" })}</time><h2>${escapeHTML(entry.title || "Bugünden...")}</h2><p>${escapeHTML(entry.body)}</p></article>`).join("") : emptyHTML("✎", "İlk sayfan seni bekliyor. Bugün nasıl hissettiğini yazabilirsin.")}</div>`;
+    ${headerHTML(t("diary.eyebrow"), t("nav.diary"), t("diary.subtitle"), `<button class="solid-button" data-action="new-diary">+ <span class="hide-mobile">${t("diary.new")}</span></button>`)}
+    <div class="diary-grid">${entries.length ? entries.map((entry) => `<article class="surface diary-card" data-action="edit-diary" data-id="${entry.id}"><span class="mood">${entry.mood}</span><time>${formatDate(entry.date, { day: "numeric", month: "long", year: "numeric" })}</time><h2>${escapeHTML(entry.title || t("diary.defaultTitle"))}</h2><p>${escapeHTML(entry.body)}</p></article>`).join("") : emptyHTML("✎", t("diary.empty"))}</div>`;
 }
 
 function renderWatch() {
-  const filtered = state.watchlist.filter((item) => watchFilter === "all" || item.status === watchFilter);
+  const filtered = state.watchlist.filter((item) =>
+    (watchFilter === "all" || item.status === watchFilter) &&
+    (watchTypeFilter === "all" || item.type === watchTypeFilter)
+  );
   const sorted = [...filtered].sort((first, second) => {
+    const firstRated = first.rating !== null && first.rating !== undefined && first.rating !== "";
+    const secondRated = second.rating !== null && second.rating !== undefined && second.rating !== "";
+    if (firstRated !== secondRated) return firstRated ? -1 : 1;
     const ratingDifference = Number(first.rating || 0) - Number(second.rating || 0);
     if (ratingDifference) return watchSort === "asc" ? ratingDifference : -ratingDifference;
-    return first.title.localeCompare(second.title, "tr-TR");
+    return first.title.localeCompare(second.title, uiLanguage === "tr" ? "tr-TR" : "de-DE");
   });
   const watched = state.watchlist.filter((item) => item.status === "watched").length;
+  const movieCount = state.watchlist.filter((item) => item.type === "movie").length;
+  const seriesCount = state.watchlist.filter((item) => item.type === "series").length;
+  const statusLabels = { watched: t("watch.watched"), watching: t("watch.watching"), planned: t("watch.planned") };
   viewContainer.innerHTML = `
-    ${headerHTML("Küçük arşivin", "İzlediklerim", `${watched} yapım tamamlandı · ${state.watchlist.length} toplam`, `<button class="solid-button" data-action="new-media">+ <span class="hide-mobile">Film / dizi</span></button>`)}
-    <div class="filter-row"><button class="filter-button ${watchFilter === "all" ? "active" : ""}" data-action="filter-media" data-filter="all">Tümü</button><button class="filter-button ${watchFilter === "watching" ? "active" : ""}" data-action="filter-media" data-filter="watching">İzliyorum</button><button class="filter-button ${watchFilter === "planned" ? "active" : ""}" data-action="filter-media" data-filter="planned">Listemde</button><button class="filter-button ${watchFilter === "watched" ? "active" : ""}" data-action="filter-media" data-filter="watched">İzledim</button><button class="filter-button" data-action="sort-media" data-sort="${watchSort === "desc" ? "asc" : "desc"}" title="Puan sırasını değiştir">Puan ${watchSort === "desc" ? "↓" : "↑"}</button></div>
+    ${headerHTML(t("watch.eyebrow"), t("watch.title"), t("watch.summary", { watched, total: state.watchlist.length }), `<button class="solid-button" data-action="new-media">+ <span class="hide-mobile">${t("watch.add")}</span></button>`)}
+    <div class="media-tabs" role="tablist" aria-label="${t("watch.title")}">
+      <button role="tab" aria-selected="${watchTypeFilter === "all"}" class="media-tab ${watchTypeFilter === "all" ? "active" : ""}" data-action="filter-media-type" data-type="all">${t("common.all")} <span>${state.watchlist.length}</span></button>
+      <button role="tab" aria-selected="${watchTypeFilter === "movie"}" class="media-tab ${watchTypeFilter === "movie" ? "active" : ""}" data-action="filter-media-type" data-type="movie">${t("watch.movies")} <span>${movieCount}</span></button>
+      <button role="tab" aria-selected="${watchTypeFilter === "series"}" class="media-tab ${watchTypeFilter === "series" ? "active" : ""}" data-action="filter-media-type" data-type="series">${t("watch.series")} <span>${seriesCount}</span></button>
+    </div>
+    <div class="filter-row"><button class="filter-button ${watchFilter === "all" ? "active" : ""}" data-action="filter-media" data-filter="all">${t("common.all")}</button><button class="filter-button ${watchFilter === "watching" ? "active" : ""}" data-action="filter-media" data-filter="watching">${t("watch.watching")}</button><button class="filter-button ${watchFilter === "planned" ? "active" : ""}" data-action="filter-media" data-filter="planned">${t("watch.planned")}</button><button class="filter-button ${watchFilter === "watched" ? "active" : ""}" data-action="filter-media" data-filter="watched">${t("watch.watched")}</button><button class="filter-button" data-action="sort-media" data-sort="${watchSort === "desc" ? "asc" : "desc"}" title="${t("watch.sortTitle")}">${t("watch.rating")} ${watchSort === "desc" ? "↓" : "↑"}</button></div>
     <div class="media-list">${sorted.length ? sorted.map((item) => {
-      const statusLabels = { watched: "İzledim", watching: "İzliyorum", planned: "Listemde" };
-      return `<article class="surface media-card"><div class="media-cover">${escapeHTML(item.title.charAt(0).toLocaleUpperCase("tr-TR"))}</div><div class="media-meta"><h2>${escapeHTML(item.title)}</h2><p>${item.type === "series" ? "Dizi" : "Film"} · ${statusLabels[item.status]}</p>${item.rating ? `<p class="stars">${"★".repeat(item.rating)}${"☆".repeat(5 - item.rating)}</p>` : `<p>Henüz puanlanmadı</p>`}${item.notes ? `<p>${escapeHTML(item.notes)}</p>` : ""}<div class="media-tags">${item.collection ? `<span class="tag">${escapeHTML(item.collection)}</span>` : ""}<span class="tag">${statusLabels[item.status]}</span><button class="tiny-button" data-action="edit-media" data-id="${item.id}" aria-label="Düzenle">✎</button><button class="tiny-button" data-action="delete-media" data-id="${item.id}" aria-label="Sil">×</button></div></div></article>`;
-    }).join("") : emptyHTML("▷", "Bu bölüm henüz boş. İlk film veya dizini ekle.")}</div>`;
+      const hasRating = item.rating !== null && item.rating !== undefined && item.rating !== "";
+      const collection = item.collection === "Ihre Liste" ? t("watch.personalList") : item.collection;
+      return `<article class="surface media-card"><div class="media-cover">${escapeHTML(item.title.charAt(0).toLocaleUpperCase(uiLanguage === "tr" ? "tr-TR" : "de-DE"))}</div><div class="media-meta"><h2>${escapeHTML(item.title)}</h2><p>${item.type === "series" ? t("common.series") : t("common.movie")} · ${statusLabels[item.status]}</p>${hasRating ? `<p class="rating-score"><strong>${formatRating(Number(item.rating))}</strong><span>/ 10</span></p>` : `<p>${t("watch.unrated")}</p>`}${item.notes ? `<p>${escapeHTML(item.notes)}</p>` : ""}<div class="media-tags">${collection ? `<span class="tag">${escapeHTML(collection)}</span>` : ""}<span class="tag">${statusLabels[item.status]}</span><button class="tiny-button" data-action="edit-media" data-id="${item.id}" aria-label="${t("common.edit")}">✎</button><button class="tiny-button" data-action="delete-media" data-id="${item.id}" aria-label="${t("common.delete")}">×</button></div></div></article>`;
+    }).join("") : emptyHTML("▷", t("watch.empty"))}</div>`;
 }
 
 function renderPrayer() {
@@ -473,17 +544,17 @@ function renderPrayer() {
   const weekStart = addDays(selected, -((selected.getDay() + 6) % 7));
   const week = Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
   viewContainer.innerHTML = `
-    ${headerHTML("Huzur anların", "İbadet", "Namazlarını işaretle, devamlılığını nazikçe takip et.")}
+    ${headerHTML(t("prayer.eyebrow"), t("prayer.title"), t("prayer.subtitle"))}
     <div class="prayer-page-grid">
       <section class="surface surface-inner">
-        <div class="date-switcher"><button class="icon-button" data-action="prayer-prev" aria-label="Önceki gün">‹</button><strong>${formatDate(prayerDate)}</strong><button class="icon-button" data-action="prayer-next" aria-label="Sonraki gün">›</button></div>
+        <div class="date-switcher"><button class="icon-button" data-action="prayer-prev" aria-label="${t("prayer.previousDay")}">‹</button><strong>${formatDate(prayerDate)}</strong><button class="icon-button" data-action="prayer-next" aria-label="${t("prayer.nextDay")}">›</button></div>
         <div class="prayer-list">${prayers.map((prayer) => {
           const done = state.prayers[prayerDate]?.[prayer.id];
-          return `<label class="prayer-check ${done ? "done" : ""}"><input type="checkbox" data-action="toggle-prayer" data-prayer="${prayer.id}" data-date="${prayerDate}" ${done ? "checked" : ""}/><span class="custom-check">✓</span><span><strong>${prayer.name}</strong><small>${prayer.note}</small></span><span class="prayer-symbol">${prayer.symbol}</span></label>`;
+          return `<label class="prayer-check ${done ? "done" : ""}"><input type="checkbox" data-action="toggle-prayer" data-prayer="${prayer.id}" data-date="${prayerDate}" ${done ? "checked" : ""}/><span class="custom-check">✓</span><span><strong>${prayerName(prayer)}</strong><small>${prayerNote(prayer)}</small></span><span class="prayer-symbol">${prayer.symbol}</span></label>`;
         }).join("")}</div>
       </section>
       <section class="surface surface-inner">
-        <div class="section-heading"><div><h2>Bu haftanın ritmi</h2><p>${checked}/5 bugün tamamlandı</p></div><div class="progress-ring" style="--progress:${checked * 72}deg;width:4.2rem;height:4.2rem"><strong>${checked}</strong></div></div>
+        <div class="section-heading"><div><h2>${t("prayer.week")}</h2><p>${t("prayer.todayCompleted", { count: checked })}</p></div><div class="progress-ring" style="--progress:${checked * 72}deg;width:4.2rem;height:4.2rem"><strong>${checked}</strong></div></div>
         <div class="week-bars">${week.map((day) => {
           const iso = localISO(day);
           const count = prayers.filter((prayer) => state.prayers[iso]?.[prayer.id]).length;
@@ -495,18 +566,20 @@ function renderPrayer() {
 
 function renderSettings() {
   viewContainer.innerHTML = `
-    ${headerHTML("Kontrol sende", "Ayarlar", "Gizlilik, yedekleme ve kişisel bilgiler.")}
+    ${headerHTML(t("settings.eyebrow"), t("nav.settings"), t("settings.subtitle"))}
     <div class="settings-grid">
-      <section class="surface settings-card"><h2>Profilin</h2><p>Uygulamada görünen ismini değiştirebilirsin.</p><form id="profile-form" class="dialog-form"><label><span>Adın</span><input name="name" value="${escapeHTML(state.profile.name)}" required /></label><button class="solid-button" type="submit">Kaydet</button></form></section>
-      <section class="surface settings-card"><h2>Şifreli yedek</h2><p>Tüm kayıtlarını tek bir şifreli dosya olarak indir. Yeni cihazda aynı PIN ile geri yükleyebilirsin.</p><div class="button-row"><button class="solid-button" data-action="export-backup">Yedeği indir</button><button class="soft-button" data-action="import-backup">Yedek yükle</button></div></section>
-      <section class="surface settings-card"><h2>PIN ve kilit</h2><p>PIN’in olmadan içeriklerin okunamaz. 30 dakika hareketsizlikte uygulama kendini kilitler.</p><div class="button-row"><button class="soft-button" data-action="change-pin">PIN değiştir</button><button class="soft-button" data-action="lock">Şimdi kilitle</button></div></section>
-      <section class="surface settings-card"><h2>Gizliliğin</h2><p>Takvim, regl bilgileri, günlük ve listelerin şifreli biçimde yalnızca bu cihazda tutulur. Sunucuya gönderilmez.</p><span class="tag">AES‑GCM ile şifreli</span></section>
+      <section class="surface settings-card"><h2>${t("settings.profile")}</h2><p>${t("settings.profileText")}</p><form id="profile-form" class="dialog-form"><label><span>${t("auth.name")}</span><input name="name" value="${escapeHTML(state.profile.name)}" required /></label><button class="solid-button" type="submit">${t("common.save")}</button></form></section>
+      <section class="surface settings-card"><h2>${t("common.language")}</h2><p>${t("settings.languageText")}</p><div class="language-switch settings-language"><button type="button" data-language="de">${t("common.german")}</button><button type="button" data-language="tr">${t("common.turkish")}</button></div></section>
+      <section class="surface settings-card"><h2>${t("settings.backup")}</h2><p>${t("settings.backupText")}</p><div class="button-row"><button class="solid-button" data-action="export-backup">${t("settings.download")}</button><button class="soft-button" data-action="import-backup">${t("settings.upload")}</button></div></section>
+      <section class="surface settings-card"><h2>${t("settings.pinLock")}</h2><p>${t("settings.pinText")}</p><div class="button-row"><button class="soft-button" data-action="change-pin">${t("settings.changePin")}</button><button class="soft-button" data-action="lock">${t("settings.lockNow")}</button></div></section>
+      <section class="surface settings-card"><h2>${t("settings.privacy")}</h2><p>${t("settings.privacyText")}</p><span class="tag">${t("settings.encrypted")}</span></section>
     </div>`;
+  translateStaticUI();
   document.querySelector("#profile-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     state.profile.name = new FormData(event.currentTarget).get("name").trim();
     await queueSave();
-    showToast("İsmin güncellendi.");
+    showToast(t("toast.nameUpdated"));
     renderSettings();
   });
 }
@@ -531,19 +604,19 @@ function closeDialog() {
 function openEventForm(id = null, date = selectedDate) {
   const existing = id ? state.events.find((event) => event.id === id) : null;
   const item = existing || { title: "", type: "work", startDate: date, endDate: date, startTime: "", endTime: "", notes: "" };
-  openDialog(existing ? "Kayıt" : "Takvim", existing ? "Kaydı düzenle" : "Yeni kayıt", `
+  openDialog(existing ? t("form.record") : t("nav.calendar"), existing ? t("form.editRecord") : t("form.newRecord"), `
     <form class="dialog-form" id="event-form">
-      <label><span>Başlık</span><input name="title" value="${escapeHTML(item.title)}" placeholder="Örn. Sabah vardiyası" required /></label>
-      <label><span>Tür</span><select name="type">${Object.entries(eventTypes).map(([key, value]) => `<option value="${key}" ${item.type === key ? "selected" : ""}>${value.label}</option>`).join("")}</select></label>
-      <div class="form-grid"><label><span>Başlangıç</span><input type="date" name="startDate" value="${item.startDate}" required /></label><label><span>Bitiş</span><input type="date" name="endDate" value="${item.endDate || item.startDate}" required /></label></div>
-      <div class="form-grid"><label><span>Başlangıç saati</span><input type="time" name="startTime" value="${item.startTime || ""}" /></label><label><span>Bitiş saati</span><input type="time" name="endTime" value="${item.endTime || ""}" /></label></div>
-      <label><span>Not</span><textarea name="notes" placeholder="İstersen küçük bir not ekle">${escapeHTML(item.notes || "")}</textarea></label>
-      <div class="dialog-actions"><button class="soft-button dialog-close" type="button">Vazgeç</button><button class="solid-button" type="submit">Kaydet</button></div>
+      <label><span>${t("common.title")}</span><input name="title" value="${escapeHTML(item.title)}" placeholder="${t("form.shiftPlaceholder")}" required /></label>
+      <label><span>${t("common.type")}</span><select name="type">${Object.entries(eventTypes).map(([key]) => `<option value="${key}" ${item.type === key ? "selected" : ""}>${eventTypeLabel(key)}</option>`).join("")}</select></label>
+      <div class="form-grid"><label><span>${t("common.start")}</span><input type="date" name="startDate" value="${item.startDate}" required /></label><label><span>${t("common.end")}</span><input type="date" name="endDate" value="${item.endDate || item.startDate}" required /></label></div>
+      <div class="form-grid"><label><span>${t("common.startTime")}</span><input type="time" name="startTime" value="${item.startTime || ""}" /></label><label><span>${t("common.endTime")}</span><input type="time" name="endTime" value="${item.endTime || ""}" /></label></div>
+      <label><span>${t("common.note")}</span><textarea name="notes" placeholder="${t("form.notePlaceholder")}">${escapeHTML(item.notes || "")}</textarea></label>
+      <div class="dialog-actions"><button class="soft-button dialog-close" type="button">${t("common.cancel")}</button><button class="solid-button" type="submit">${t("common.save")}</button></div>
     </form>`);
   document.querySelector("#event-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const values = Object.fromEntries(new FormData(event.currentTarget));
-    if (values.endDate < values.startDate) return showToast("Bitiş tarihi başlangıçtan önce olamaz.");
+    if (values.endDate < values.startDate) return showToast(t("form.endBeforeStart"));
     const record = { ...item, ...values, id: existing?.id || crypto.randomUUID(), updatedAt: new Date().toISOString() };
     if (existing) state.events = state.events.map((entry) => entry.id === existing.id ? record : entry);
     else state.events.push(record);
@@ -551,7 +624,7 @@ function openEventForm(id = null, date = selectedDate) {
     calendarCursor = new Date(parseISO(record.startDate).getFullYear(), parseISO(record.startDate).getMonth(), 1);
     await queueSave();
     closeDialog();
-    showToast("Takvime kaydedildi.");
+    showToast(t("form.calendarSaved"));
     renderCurrentView();
   });
 }
@@ -559,12 +632,12 @@ function openEventForm(id = null, date = selectedDate) {
 function openDiaryForm(id = null) {
   const existing = id ? state.diary.find((entry) => entry.id === id) : null;
   const item = existing || { date: localISO(new Date()), title: "", mood: "😊", body: "" };
-  openDialog(existing ? "Günlük" : "Yeni sayfa", existing ? "Sayfanı düzenle" : "Bugünden...", `
+  openDialog(existing ? t("form.diary") : t("form.newPage"), existing ? t("form.editPage") : t("form.fromToday"), `
     <form class="dialog-form" id="diary-form">
-      <div class="form-grid"><label><span>Tarih</span><input type="date" name="date" value="${item.date}" required /></label><label><span>Bugünkü ruh hâlin</span><select name="mood"><option ${item.mood === "😊" ? "selected" : ""}>😊</option><option ${item.mood === "🥰" ? "selected" : ""}>🥰</option><option ${item.mood === "😌" ? "selected" : ""}>😌</option><option ${item.mood === "🥺" ? "selected" : ""}>🥺</option><option ${item.mood === "😔" ? "selected" : ""}>😔</option><option ${item.mood === "😴" ? "selected" : ""}>😴</option></select></label></div>
-      <label><span>Başlık</span><input name="title" value="${escapeHTML(item.title)}" placeholder="Bugünün başlığı" /></label>
-      <label><span>İçinden geçenler</span><textarea name="body" placeholder="Bugün nasıl geçti?" required>${escapeHTML(item.body)}</textarea></label>
-      <div class="dialog-actions">${existing ? `<button class="danger-button" type="button" data-action="delete-diary" data-id="${existing.id}">Sil</button>` : ""}<button class="soft-button dialog-close" type="button">Vazgeç</button><button class="solid-button" type="submit">Kaydet</button></div>
+      <div class="form-grid"><label><span>${t("common.date")}</span><input type="date" name="date" value="${item.date}" required /></label><label><span>${t("form.mood")}</span><select name="mood"><option ${item.mood === "😊" ? "selected" : ""}>😊</option><option ${item.mood === "🥰" ? "selected" : ""}>🥰</option><option ${item.mood === "😌" ? "selected" : ""}>😌</option><option ${item.mood === "🥺" ? "selected" : ""}>🥺</option><option ${item.mood === "😔" ? "selected" : ""}>😔</option><option ${item.mood === "😴" ? "selected" : ""}>😴</option></select></label></div>
+      <label><span>${t("common.title")}</span><input name="title" value="${escapeHTML(item.title)}" placeholder="${t("form.todayTitle")}" /></label>
+      <label><span>${t("form.thoughts")}</span><textarea name="body" placeholder="${t("form.dayPlaceholder")}" required>${escapeHTML(item.body)}</textarea></label>
+      <div class="dialog-actions">${existing ? `<button class="danger-button" type="button" data-action="delete-diary" data-id="${existing.id}">${t("common.delete")}</button>` : ""}<button class="soft-button dialog-close" type="button">${t("common.cancel")}</button><button class="solid-button" type="submit">${t("common.save")}</button></div>
     </form>`);
   document.querySelector("#diary-form").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -574,43 +647,46 @@ function openDiaryForm(id = null) {
     else state.diary.push(record);
     await queueSave();
     closeDialog();
-    showToast("Günlüğüne kaydedildi.");
+    showToast(t("form.diarySaved"));
     renderDiary();
   });
 }
 
 function openMediaForm(id = null) {
   const existing = id ? state.watchlist.find((entry) => entry.id === id) : null;
-  const item = existing || { title: "", type: "movie", status: "planned", rating: 0, notes: "" };
-  openDialog(existing ? "Arşiv" : "Yeni yapım", existing ? "Kaydı düzenle" : "Film veya dizi ekle", `
+  const item = existing || { title: "", type: "movie", status: "planned", rating: null, notes: "" };
+  const ratingValue = item.rating === null || item.rating === undefined || item.rating === "" ? "" : String(item.rating).replace(".", ",");
+  openDialog(existing ? t("form.archive") : t("form.newMedia"), existing ? t("form.editMedia") : t("form.addMedia"), `
     <form class="dialog-form" id="media-form">
-      <label><span>Adı</span><input name="title" value="${escapeHTML(item.title)}" placeholder="Film veya dizinin adı" required /></label>
-      <div class="form-grid"><label><span>Tür</span><select name="type"><option value="movie" ${item.type === "movie" ? "selected" : ""}>Film</option><option value="series" ${item.type === "series" ? "selected" : ""}>Dizi</option></select></label><label><span>Durum</span><select name="status"><option value="planned" ${item.status === "planned" ? "selected" : ""}>Listemde</option><option value="watching" ${item.status === "watching" ? "selected" : ""}>İzliyorum</option><option value="watched" ${item.status === "watched" ? "selected" : ""}>İzledim</option></select></label></div>
-      <label><span>Puanın</span><select name="rating"><option value="0">Henüz puan yok</option>${[1,2,3,4,5].map((rating) => `<option value="${rating}" ${Number(item.rating) === rating ? "selected" : ""}>${"★".repeat(rating)}${"☆".repeat(5-rating)}</option>`).join("")}</select></label>
-      <label><span>Notun</span><textarea name="notes" placeholder="Neyi sevdin, kiminle izledin?">${escapeHTML(item.notes || "")}</textarea></label>
-      <div class="dialog-actions"><button class="soft-button dialog-close" type="button">Vazgeç</button><button class="solid-button" type="submit">Kaydet</button></div>
+      <label><span>${t("form.name")}</span><input name="title" value="${escapeHTML(item.title)}" placeholder="${t("form.mediaPlaceholder")}" required /></label>
+      <div class="form-grid"><label><span>${t("common.type")}</span><select name="type"><option value="movie" ${item.type === "movie" ? "selected" : ""}>${t("common.movie")}</option><option value="series" ${item.type === "series" ? "selected" : ""}>${t("common.series")}</option></select></label><label><span>${t("form.status")}</span><select name="status"><option value="planned" ${item.status === "planned" ? "selected" : ""}>${t("watch.planned")}</option><option value="watching" ${item.status === "watching" ? "selected" : ""}>${t("watch.watching")}</option><option value="watched" ${item.status === "watched" ? "selected" : ""}>${t("watch.watched")}</option></select></label></div>
+      <label><span>${t("form.yourRating")}</span><input name="rating" type="text" inputmode="decimal" value="${ratingValue}" placeholder="${t("form.ratingPlaceholder")}" pattern="^(?:10(?:[.,]0)?|[0-9](?:[.,][0-9])?)$" /><small class="field-hint">${t("form.ratingHint")}</small></label>
+      <label><span>${t("form.yourNote")}</span><textarea name="notes" placeholder="${t("form.mediaNotePlaceholder")}">${escapeHTML(item.notes || "")}</textarea></label>
+      <div class="dialog-actions"><button class="soft-button dialog-close" type="button">${t("common.cancel")}</button><button class="solid-button" type="submit">${t("common.save")}</button></div>
     </form>`);
   document.querySelector("#media-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const values = Object.fromEntries(new FormData(event.currentTarget));
-    values.rating = Number(values.rating);
+    const rawRating = String(values.rating || "").trim().replace(",", ".");
+    if (rawRating && !/^(?:10(?:\.0)?|[0-9](?:\.[0-9])?)$/.test(rawRating)) return showToast(t("form.invalidRating"));
+    values.rating = rawRating === "" ? null : Number(rawRating);
     const record = { ...item, ...values, id: existing?.id || crypto.randomUUID(), updatedAt: new Date().toISOString() };
     if (existing) state.watchlist = state.watchlist.map((entry) => entry.id === existing.id ? record : entry);
     else state.watchlist.push(record);
     await queueSave();
     closeDialog();
-    showToast("Listene kaydedildi.");
+    showToast(t("form.mediaSaved"));
     renderWatch();
   });
 }
 
 function openPinForm() {
-  openDialog("Güvenlik", "PIN değiştir", `<form class="dialog-form" id="pin-form"><label><span>Mevcut PIN</span><input type="password" inputmode="numeric" name="current" required minlength="4" /></label><div class="form-grid"><label><span>Yeni PIN</span><input type="password" inputmode="numeric" name="next" required minlength="4" maxlength="12" /></label><label><span>Yeni PIN tekrar</span><input type="password" inputmode="numeric" name="confirm" required minlength="4" maxlength="12" /></label></div><div class="dialog-actions"><button class="soft-button dialog-close" type="button">Vazgeç</button><button class="solid-button" type="submit">PIN’i değiştir</button></div></form>`);
+  openDialog(t("pin.security"), t("pin.change"), `<form class="dialog-form" id="pin-form"><label><span>${t("pin.current")}</span><input type="password" inputmode="numeric" name="current" required minlength="4" /></label><div class="form-grid"><label><span>${t("pin.new")}</span><input type="password" inputmode="numeric" name="next" required minlength="4" maxlength="12" /></label><label><span>${t("pin.repeat")}</span><input type="password" inputmode="numeric" name="confirm" required minlength="4" maxlength="12" /></label></div><div class="dialog-actions"><button class="soft-button dialog-close" type="button">${t("common.cancel")}</button><button class="solid-button" type="submit">${t("pin.change")}</button></div></form>`);
   document.querySelector("#pin-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const values = Object.fromEntries(new FormData(event.currentTarget));
-    if (!/^\d{4,12}$/.test(values.next)) return showToast("Yeni PIN 4–12 rakam olmalı.");
-    if (values.next !== values.confirm) return showToast("Yeni PIN’ler eşleşmiyor.");
+    if (!/^\d{4,12}$/.test(values.next)) return showToast(t("pin.invalid"));
+    if (values.next !== values.confirm) return showToast(t("pin.noMatch"));
     try {
       const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
       const testKey = await deriveKey(values.current, base64ToBytes(stored.salt));
@@ -619,9 +695,9 @@ function openPinForm() {
       encryptionKey = await deriveKey(values.next, vaultSalt);
       await queueSave();
       closeDialog();
-      showToast("PIN’in değiştirildi.");
+      showToast(t("pin.changed"));
     } catch {
-      showToast("Mevcut PIN doğru değil.");
+      showToast(t("pin.wrongCurrent"));
     }
   });
 }
@@ -634,7 +710,7 @@ async function togglePrayer(date, prayerId) {
 }
 
 async function deleteById(collection, id, message) {
-  if (!confirm("Bu kaydı silmek istediğine emin misin?")) return;
+  if (!confirm(t("toast.confirmDelete"))) return;
   state[collection] = state[collection].filter((entry) => entry.id !== id);
   await queueSave();
   closeDialog();
@@ -651,7 +727,7 @@ function exportBackup() {
   link.download = `senin-dunyan-yedek-${localISO(new Date())}.json`;
   link.click();
   URL.revokeObjectURL(url);
-  showToast("Şifreli yedeğin indirildi.");
+  showToast(t("toast.backupDownloaded"));
 }
 
 async function importBackup(file) {
@@ -660,10 +736,10 @@ async function importBackup(file) {
     const vault = payload.vault || payload;
     if (vault.version !== 1 || !vault.salt || !vault.iv || !vault.ciphertext) throw new Error("invalid");
     localStorage.setItem(STORAGE_KEY, JSON.stringify(vault));
-    showToast("Yedek yüklendi. PIN’inle açabilirsin.");
+    showToast(t("toast.backupLoaded"));
     setTimeout(() => location.reload(), 700);
   } catch {
-    showToast("Bu dosya geçerli bir yedek değil.");
+    showToast(t("toast.invalidBackup"));
   }
 }
 
@@ -714,14 +790,14 @@ setupForm.addEventListener("submit", async (event) => {
   const name = document.querySelector("#setup-name").value.trim();
   const pin = document.querySelector("#setup-pin").value;
   const confirmation = document.querySelector("#setup-pin-confirm").value;
-  if (!/^\d{4,12}$/.test(pin)) return showToast("PIN 4–12 rakamdan oluşmalı.");
-  if (pin !== confirmation) return showToast("PIN’ler eşleşmiyor.");
+  if (!/^\d{4,12}$/.test(pin)) return showToast(t("toast.invalidPin"));
+  if (pin !== confirmation) return showToast(t("toast.pinMismatch"));
   try {
     await createVault(name, pin);
     setupForm.reset();
     enterApp();
   } catch {
-    showToast("Özel alan oluşturulamadı.");
+    showToast(t("toast.createFailed"));
   }
 });
 
@@ -730,38 +806,41 @@ unlockForm.addEventListener("submit", async (event) => {
   authError.hidden = true;
   try {
     await unlockVault(document.querySelector("#unlock-pin").value);
-    if (applyMediaCatalogMigration()) await queueSave();
+    if (applyDataMigrations()) await queueSave();
     unlockForm.reset();
     enterApp();
   } catch {
-    showAuthError("PIN doğru değil. Lütfen tekrar dene.");
+    showAuthError(t("toast.wrongPin"));
   }
 });
 
 document.addEventListener("click", async (event) => {
   resetAutoLock();
+  const languageButton = event.target.closest("[data-language]");
+  if (languageButton) return setLanguage(languageButton.dataset.language);
   const close = event.target.closest(".dialog-close");
   if (close) return closeDialog();
   const nav = event.target.closest("[data-view]");
   if (nav) return setView(nav.dataset.view);
   const action = event.target.closest("[data-action]");
   if (!action || !state) return;
-  const { id, date, prayer, filter, sort } = action.dataset;
+  const { id, date, prayer, filter, sort, type } = action.dataset;
   switch (action.dataset.action) {
     case "lock": lockApp(); break;
     case "new-event": openEventForm(null, date || selectedDate); break;
     case "edit-event": openEventForm(id); break;
-    case "delete-event": await deleteById("events", id, "Takvim kaydı silindi."); break;
+    case "delete-event": await deleteById("events", id, t("toast.eventDeleted")); break;
     case "select-day": selectedDate = date; renderCalendar(); break;
     case "calendar-prev": calendarCursor.setMonth(calendarCursor.getMonth() - 1); renderCalendar(); break;
     case "calendar-next": calendarCursor.setMonth(calendarCursor.getMonth() + 1); renderCalendar(); break;
     case "new-diary": openDiaryForm(); break;
     case "edit-diary": openDiaryForm(id); break;
-    case "delete-diary": await deleteById("diary", id, "Günlük sayfası silindi."); break;
+    case "delete-diary": await deleteById("diary", id, t("toast.diaryDeleted")); break;
     case "new-media": openMediaForm(); break;
     case "edit-media": openMediaForm(id); break;
-    case "delete-media": await deleteById("watchlist", id, "Kayıt listeden silindi."); break;
+    case "delete-media": await deleteById("watchlist", id, t("toast.mediaDeleted")); break;
     case "filter-media": watchFilter = filter; renderWatch(); break;
+    case "filter-media-type": watchTypeFilter = type; renderWatch(); break;
     case "sort-media": watchSort = sort; renderWatch(); break;
     case "toggle-prayer": await togglePrayer(date, prayer); break;
     case "prayer-prev": prayerDate = localISO(addDays(parseISO(prayerDate), -1)); renderPrayer(); break;
@@ -778,6 +857,8 @@ backupFile.addEventListener("change", () => backupFile.files[0] && importBackup(
 document.addEventListener("keydown", resetAutoLock);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) resetAutoLock(); });
 dialog.addEventListener("cancel", (event) => { event.preventDefault(); closeDialog(); });
+
+translateStaticUI();
 
 if (localStorage.getItem(STORAGE_KEY)) {
   setupForm.hidden = true;
