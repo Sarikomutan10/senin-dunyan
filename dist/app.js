@@ -89,7 +89,7 @@ const lifeModules = {
   birthdays: { icon: "✦", color: "#9a4771" },
   motivation: { icon: "☀", color: "#c9852f" },
   photos: { icon: "▣", color: "#9f4c6c" },
-  reasons: { icon: "21", color: "#b13c6e" },
+  reasons: { icon: "25", color: "#b13c6e" },
   letters: { icon: "✉", color: "#73528d" },
   capsules: { icon: "⌛", color: "#8a6836" },
   story: { icon: "◇", color: "#aa5f4d" },
@@ -313,6 +313,53 @@ async function deriveKey(pin, salt) {
   );
 }
 
+function personalGiftSeeds(updatedAt = new Date().toISOString()) {
+  const reasons = [
+    "Ich liebe deinen Duft!",
+    "Ich liebe es, wie fürsorglich du bist!",
+    "Ich liebe es, wie du anderen Menschen hilfst!",
+    "Ich liebe es, wie du an meinen schwierigen Tagen für mich da bist.",
+    "Ich liebe es, wie du mich anschaust.",
+    "Ich liebe dein Lächeln!",
+    "Ich liebe es, wie du mein Herz leichter machst!",
+    "Ich liebe es, wie ehrgeizig du bist und wie sehr du dich anstrengst!",
+    "Ich liebe es, dass du auf dich und auch auf mich achtest!",
+    "Ich liebe es, dass du immer an meiner Seite geblieben bist und auch weiterhin an meiner Seite bleibst!",
+    "Ich liebe deine Augen!",
+    "Ich liebe alles an dir!"
+  ].map((title, index) => ({ id: `reason-personal-${index + 1}`, module: "reasons", title, note: "", date: "", updatedAt }));
+  const story = [
+    ["story-together-2020", "Zusammengekommen · Birlikte olduğumuz gün", "2020-12-05"],
+    ["story-proposal-2025", "Heiratsantrag · Evlilik teklifi", "2025-09-06"],
+    ["story-isteme-2025", "Kız isteme · Das Familienversprechen", "2025-09-13"],
+    ["story-engagement-2025", "Verlobung · Nişan", "2025-09-20"]
+  ].map(([id, title, date]) => ({ id, module: "story", title, date, note: "", image: "", updatedAt }));
+  const coupons = [
+    "Gemeinsam einkaufen gehen",
+    "Kinodate",
+    "Açaí-Bowl-Date",
+    "Burger-Date",
+    "Pizza-Date",
+    "Pasta-Abend",
+    "Uigurisch essen gehen",
+    "Gemeinsam Klamotten shoppen",
+    "IKEA-Date",
+    "Gemeinsamer Familienbesuch",
+    "Treffen mit Freunden",
+    "Filmabend mit deinem Wunschfilm",
+    "Café-Date",
+    "Picknick zu zweit",
+    "Entspannende Massage",
+    "Überraschungsausflug",
+    "Spieleabend",
+    "Sonnenuntergang-Date",
+    "Eis essen gehen",
+    "Bowling-Date",
+    "Ein „Du entscheidest“-Tag"
+  ].map((title, index) => ({ id: `coupon-personal-${index + 1}`, module: "coupons", title, note: "Einlösbar, wann immer du möchtest ♡", date: "", done: false, updatedAt }));
+  return [...reasons, ...story, ...coupons];
+}
+
 function initialState(name) {
   const createdAt = new Date().toISOString();
   return {
@@ -337,12 +384,13 @@ function initialState(name) {
     ratingScaleVersion: 2,
     prayers: {},
     lifeItems: [
-      { id: "birthday-her", module: "birthdays", title: "Mein Geburtstag", category: "birthday", date: BIRTHDAY, note: "", updatedAt: createdAt }
+      { id: "birthday-her", module: "birthdays", title: "Mein Geburtstag", category: "birthday", date: BIRTHDAY, note: "", updatedAt: createdAt },
+      ...personalGiftSeeds(createdAt)
     ],
     lifeChecks: {},
     dashboardHidden: {},
     prayerLocation: null,
-    lifeVersion: 3,
+    lifeVersion: 4,
     updatedAt: new Date().toISOString()
   };
 }
@@ -378,6 +426,12 @@ function applyDataMigrations() {
     state.dashboardHidden ||= {};
     state.prayerLocation ||= null;
     state.lifeVersion = 3;
+    changed = true;
+  }
+  if ((state.lifeVersion || 0) < 4) {
+    const ids = new Set(state.lifeItems.map((item) => item.id));
+    personalGiftSeeds().forEach((item) => { if (!ids.has(item.id)) state.lifeItems.push(item); });
+    state.lifeVersion = 4;
     changed = true;
   }
   if ((state.ratingScaleVersion || 0) < 2) {
@@ -746,7 +800,7 @@ function lifeModuleSummary(module, items) {
     const goals = items.filter((item) => item.category === "goal").reduce((sum, item) => sum + Number(item.amount || 0), 0);
     return t("life.financeSummary", { expenses: formatRating(expenses), goals: formatRating(goals) });
   }
-  if (module === "reasons") return t("gift.reasonProgress", { count: Math.min(21, items.length) });
+  if (module === "reasons") return t("gift.reasonProgress", { count: Math.min(25, items.length) });
   if (module === "coupons") return t("gift.couponProgress", { open: items.filter((item) => !item.done).length, total: items.length });
   if (module === "capsules") return t("gift.capsuleProgress", { count: items.filter((item) => !item.date || item.date <= localISO(new Date())).length, total: items.length });
   return t("life.entryCount", { count: items.length });
@@ -806,6 +860,9 @@ function renderLife() {
   const module = lifeModules[activeLifeModule];
   const regularModules = Object.entries(lifeModules).filter(([key]) => !giftModuleKeys.includes(key));
   const giftModules = Object.entries(lifeModules).filter(([key]) => giftModuleKeys.includes(key));
+  const addActions = activeLifeModule === "photos"
+    ? `<div class="button-row"><button class="soft-button" data-action="bulk-photos">▣ ${t("gift.bulkPhotos")}</button><button class="solid-button" data-action="new-life" data-module="${activeLifeModule}">+ ${t("common.add")}</button></div>`
+    : `<button class="solid-button" data-action="new-life" data-module="${activeLifeModule}">+ ${t("common.add")}</button>`;
   viewContainer.innerHTML = `
     ${headerHTML(t("life.eyebrow"), t("nav.life"), t("life.subtitle"))}
     <section class="surface motivation-hero"><span>☀</span><div><p class="eyebrow">${t("life.dailyMotivation")}</p><h2>${escapeHTML(getDailyMotivation())}</h2></div></section>
@@ -813,7 +870,7 @@ function renderLife() {
     <section class="surface gift-hero"><div><p class="eyebrow">${t("gift.forYou")}</p><h2>${escapeHTML(getDailyLove())}</h2></div><span aria-hidden="true">♡</span></section>
     <p class="life-group-title">${t("gift.title")}</p><div class="life-module-grid gift-grid">${giftModules.map(lifeModuleButton).join("")}</div>
     <section class="surface life-panel">
-      <div class="section-heading life-panel-heading"><div><p class="eyebrow">${module.icon} ${t(`life.${activeLifeModule}`)}</p><h2>${t(`life.${activeLifeModule}Title`)}</h2><p>${lifeModuleSummary(activeLifeModule, items)}</p></div><button class="solid-button" data-action="new-life" data-module="${activeLifeModule}">+ ${t("common.add")}</button></div>
+      <div class="section-heading life-panel-heading"><div><p class="eyebrow">${module.icon} ${t(`life.${activeLifeModule}`)}</p><h2>${t(`life.${activeLifeModule}Title`)}</h2><p>${lifeModuleSummary(activeLifeModule, items)}</p></div>${addActions}</div>
       ${activeLifeModule === "cycle" ? cycleInsightHTML(items) : ""}<div class="life-entry-list">${items.length ? items.map(lifeItemHTML).join("") : emptyHTML(module.icon, t(`life.${activeLifeModule}Empty`))}</div>
     </section>`;
 }
@@ -905,6 +962,23 @@ async function toggleLifeItem(id) {
     item.done = !item.done;
   }
   await queueSave();
+  renderLife();
+}
+
+async function bulkImportPhotos(fileList) {
+  const files = [...fileList].filter((file) => file.type.startsWith("image/")).slice(0, 20);
+  if (!files.length) return showToast(t("gift.bulkNone"));
+  let imported = 0;
+  for (const file of files) {
+    try {
+      const image = await compressWishImage(file);
+      state.lifeItems.push({ id: crypto.randomUUID(), module: "photos", title: file.name.replace(/\.[^.]+$/, ""), note: "", date: "", image, updatedAt: new Date().toISOString() });
+      imported += 1;
+    } catch { /* Unsupported images are skipped. */ }
+  }
+  if (!imported) return showToast(t("gift.bulkNone"));
+  await queueSave();
+  showToast(t("gift.bulkSaved", { count: imported }));
   renderLife();
 }
 
@@ -1330,6 +1404,15 @@ document.addEventListener("click", async (event) => {
     }
     case "delete-life": await deleteById("lifeItems", id, t("life.deleted")); break;
     case "toggle-life": await toggleLifeItem(id); break;
+    case "bulk-photos": {
+      const picker = document.createElement("input");
+      picker.type = "file";
+      picker.accept = "image/*";
+      picker.multiple = true;
+      picker.addEventListener("change", () => bulkImportPhotos(picker.files), { once: true });
+      picker.click();
+      break;
+    }
     case "search-result": {
       if (kind === "event") {
         const item = state.events.find((entry) => entry.id === id);
@@ -1399,5 +1482,5 @@ async function initializeAccess() {
 initializeAccess();
 
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js?v=10"));
+  window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js?v=11"));
 }
