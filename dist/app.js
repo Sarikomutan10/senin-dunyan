@@ -73,6 +73,23 @@ const eventTypes = {
   other: { label: "Diğer", color: "#8f7482", icon: "·" }
 };
 
+const lifeModules = {
+  wishes: { icon: "♡", color: "#c54870" },
+  cycle: { icon: "◉", color: "#a83264" },
+  habits: { icon: "✓", color: "#2f9b87" },
+  tasks: { icon: "☑", color: "#6f62bb" },
+  moods: { icon: "☺", color: "#d18b31" },
+  us: { icon: "∞", color: "#b13c6e" },
+  recipes: { icon: "♨", color: "#c26a3f" },
+  duas: { icon: "☾", color: "#4f689e" },
+  health: { icon: "+", color: "#3f8f72" },
+  finance: { icon: "€", color: "#94732c" },
+  birthdays: { icon: "✦", color: "#9a4771" },
+  motivation: { icon: "☀", color: "#c9852f" }
+};
+
+const motivationKeys = Array.from({ length: 12 }, (_, index) => `motivation.${index + 1}`);
+
 const mediaCatalog = [
   { id: "catalog-mcu-iron-man", title: "Iron Man", type: "movie", collection: "Marvel · MCU" },
   { id: "catalog-mcu-incredible-hulk", title: "The Incredible Hulk", type: "movie", collection: "Marvel · MCU" },
@@ -148,6 +165,7 @@ let calendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1
 let watchFilter = "all";
 let watchTypeFilter = "all";
 let watchSort = "desc";
+let activeLifeModule = "wishes";
 let saveQueue = Promise.resolve();
 let toastTimer = null;
 let autoLockTimer = null;
@@ -245,6 +263,14 @@ function initialState(name) {
     mediaCatalogVersion: 2,
     ratingScaleVersion: 2,
     prayers: {},
+    lifeItems: [
+      { id: "wish-raffaello", module: "wishes", title: "Raffaello", category: "sweets", note: "", date: "", updatedAt: createdAt },
+      { id: "wish-kinder", module: "wishes", title: "Kinder Riegel / Bueno", category: "sweets", note: "", date: "", updatedAt: createdAt },
+      { id: "wish-snickers", module: "wishes", title: "Snickers", category: "sweets", note: "", date: "", updatedAt: createdAt },
+      { id: "birthday-her", module: "birthdays", title: "Mein Geburtstag", category: "birthday", date: BIRTHDAY, note: "", updatedAt: createdAt }
+    ],
+    lifeChecks: {},
+    lifeVersion: 1,
     updatedAt: new Date().toISOString()
   };
 }
@@ -255,7 +281,22 @@ function normalizeMediaTitle(title) {
 
 function applyDataMigrations() {
   state.watchlist ||= [];
+  state.lifeItems ||= [];
+  state.lifeChecks ||= {};
   let changed = false;
+  if ((state.lifeVersion || 0) < 1) {
+    const updatedAt = new Date().toISOString();
+    const seeds = [
+      { id: "wish-raffaello", module: "wishes", title: "Raffaello", category: "sweets", note: "", date: "", updatedAt },
+      { id: "wish-kinder", module: "wishes", title: "Kinder Riegel / Bueno", category: "sweets", note: "", date: "", updatedAt },
+      { id: "wish-snickers", module: "wishes", title: "Snickers", category: "sweets", note: "", date: "", updatedAt },
+      { id: "birthday-her", module: "birthdays", title: "Mein Geburtstag", category: "birthday", date: BIRTHDAY, note: "", updatedAt }
+    ];
+    const ids = new Set(state.lifeItems.map((item) => item.id));
+    seeds.forEach((item) => { if (!ids.has(item.id)) state.lifeItems.push(item); });
+    state.lifeVersion = 1;
+    changed = true;
+  }
   if ((state.ratingScaleVersion || 0) < 2) {
     state.watchlist.forEach((item) => {
       const oldRating = Number(item.rating || 0);
@@ -411,6 +452,15 @@ function getDailyHadith() {
   return hadiths[day % hadiths.length];
 }
 
+function getDailyMotivation() {
+  const today = new Date();
+  const start = new Date(today.getFullYear(), 0, 0);
+  const day = Math.floor((today - start) / 86400000);
+  const custom = state?.lifeItems?.filter((item) => item.module === "motivation") || [];
+  if (custom.length) return custom[day % custom.length].title;
+  return t(motivationKeys[day % motivationKeys.length]);
+}
+
 function eventsForDate(date) {
   return state.events.filter((event) => event.startDate <= date && (event.endDate || event.startDate) >= date);
 }
@@ -446,6 +496,11 @@ function renderToday() {
           <div class="section-heading"><div><h2>${t("today.hadith")}</h2><p>${t("today.hadithHint")}</p></div><span class="hadith-mark" aria-hidden="true">“</span></div>
           <p class="hadith-text">${uiLanguage === "de" ? i18n.hadithDe[hadiths.indexOf(hadith)] : hadith.text}</p>
           <p class="hadith-source">${hadith.source}</p>
+        </section>
+        <section class="surface motivation-card">
+          <span class="motivation-sun" aria-hidden="true">☀</span>
+          <div><p class="eyebrow">${t("life.dailyMotivation")}</p><p>${escapeHTML(getDailyMotivation())}</p></div>
+          <button class="section-link" data-view="life" data-life-module="motivation">${t("common.details")}</button>
         </section>
       </div>
       <div class="stack">
@@ -564,6 +619,119 @@ function renderPrayer() {
     </div>`;
 }
 
+function moduleItems(module) {
+  return (state.lifeItems || []).filter((item) => item.module === module).sort((a, b) => (b.date || b.updatedAt || "").localeCompare(a.date || a.updatedAt || ""));
+}
+
+function lifeModuleSummary(module, items) {
+  const today = localISO(new Date());
+  if (module === "habits") {
+    const done = items.filter((item) => state.lifeChecks?.[today]?.[item.id]).length;
+    return t("life.habitProgress", { done, total: items.length });
+  }
+  if (module === "cycle" && items.length) {
+    const starts = items.map((item) => item.date).filter(Boolean).sort();
+    const last = starts.at(-1);
+    const interval = starts.length > 1 ? Math.max(20, Math.min(40, Math.round((parseISO(starts.at(-1)) - parseISO(starts.at(-2))) / 86400000))) : 28;
+    return t("life.nextCycle", { date: formatDate(addDays(parseISO(last), interval), { day: "numeric", month: "long" }) });
+  }
+  if (module === "finance") {
+    const expenses = items.filter((item) => item.category === "expense").reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    const goals = items.filter((item) => item.category === "goal").reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    return t("life.financeSummary", { expenses: formatRating(expenses), goals: formatRating(goals) });
+  }
+  return t("life.entryCount", { count: items.length });
+}
+
+function lifeItemMeta(item) {
+  const parts = [];
+  if (item.date) parts.push(formatDate(item.date, { day: "numeric", month: "short", year: "numeric" }));
+  if (item.endDate) parts.push(`${t("common.end")}: ${formatDate(item.endDate, { day: "numeric", month: "short" })}`);
+  if (item.category) parts.push(t(`life.option.${item.category}`));
+  if (item.amount) parts.push(`${formatRating(Number(item.amount))} €`);
+  if (item.target) parts.push(`${t("life.target")}: ${formatRating(Number(item.target))} €`);
+  return parts.join(" · ");
+}
+
+function lifeItemHTML(item) {
+  const module = lifeModules[item.module];
+  const today = localISO(new Date());
+  const checkable = item.module === "habits" || item.module === "tasks" || item.module === "duas" || (item.module === "us" && item.category === "goal");
+  const done = item.module === "habits" ? Boolean(state.lifeChecks?.[today]?.[item.id]) : Boolean(item.done);
+  const title = item.module === "moods" ? `${item.mood || "😊"} ${item.title || t("life.moodEntry")}` : item.module === "cycle" ? t("life.cycleEntry") : item.id === "birthday-her" ? t("life.myBirthday") : item.title;
+  return `<article class="life-entry ${done ? "done" : ""}">
+    ${checkable ? `<button class="life-check" data-action="toggle-life" data-id="${item.id}" aria-label="${t("life.toggle")}">${done ? "✓" : ""}</button>` : `<span class="life-entry-icon" style="--module-color:${module.color}">${module.icon}</span>`}
+    <div class="life-entry-copy"><h3>${escapeHTML(title)}</h3>${lifeItemMeta(item) ? `<p>${escapeHTML(lifeItemMeta(item))}</p>` : ""}${item.note ? `<small>${escapeHTML(item.note)}</small>` : ""}${item.details ? `<small>${escapeHTML(item.details)}</small>` : ""}</div>
+    <div class="row-actions"><button class="tiny-button" data-action="edit-life" data-id="${item.id}" aria-label="${t("common.edit")}">✎</button><button class="tiny-button" data-action="delete-life" data-id="${item.id}" aria-label="${t("common.delete")}">×</button></div>
+  </article>`;
+}
+
+function renderLife() {
+  const items = moduleItems(activeLifeModule);
+  const module = lifeModules[activeLifeModule];
+  viewContainer.innerHTML = `
+    ${headerHTML(t("life.eyebrow"), t("nav.life"), t("life.subtitle"))}
+    <section class="surface motivation-hero"><span>☀</span><div><p class="eyebrow">${t("life.dailyMotivation")}</p><h2>${escapeHTML(getDailyMotivation())}</h2></div></section>
+    <div class="life-module-grid">${Object.entries(lifeModules).map(([key, entry]) => `<button class="life-module ${activeLifeModule === key ? "active" : ""}" data-action="life-module" data-module="${key}" style="--module-color:${entry.color}"><span>${entry.icon}</span><strong>${t(`life.${key}`)}</strong><small>${moduleItems(key).length}</small></button>`).join("")}</div>
+    <section class="surface life-panel">
+      <div class="section-heading life-panel-heading"><div><p class="eyebrow">${module.icon} ${t(`life.${activeLifeModule}`)}</p><h2>${t(`life.${activeLifeModule}Title`)}</h2><p>${lifeModuleSummary(activeLifeModule, items)}</p></div><button class="solid-button" data-action="new-life" data-module="${activeLifeModule}">+ ${t("common.add")}</button></div>
+      <div class="life-entry-list">${items.length ? items.map(lifeItemHTML).join("") : emptyHTML(module.icon, t(`life.${activeLifeModule}Empty`))}</div>
+    </section>`;
+}
+
+function lifeFormFields(module, item) {
+  const title = (label = t("common.title"), placeholder = t("life.titlePlaceholder")) => `<label><span>${label}</span><input name="title" value="${escapeHTML(item.title || "")}" placeholder="${placeholder}" required /></label>`;
+  const note = (label = t("common.note"), placeholder = t("life.notePlaceholder")) => `<label><span>${label}</span><textarea name="note" placeholder="${placeholder}">${escapeHTML(item.note || "")}</textarea></label>`;
+  const date = (label = t("common.date"), required = false) => `<label><span>${label}</span><input type="date" name="date" value="${item.date || ""}" ${required ? "required" : ""} /></label>`;
+  const select = (name, label, options) => `<label><span>${label}</span><select name="${name}">${options.map((value) => `<option value="${value}" ${item[name] === value ? "selected" : ""}>${t(`life.option.${value}`)}</option>`).join("")}</select></label>`;
+  switch (module) {
+    case "wishes": return `${title(t("life.wishName"))}<div class="form-grid">${select("category", t("common.type"), ["sweets", "fashion", "beauty", "book", "other"])}${date(t("life.wishDate"))}</div>${note()}`;
+    case "cycle": return `<div class="form-grid">${date(t("life.cycleStart"), true)}<label><span>${t("life.cycleEnd")}</span><input type="date" name="endDate" value="${item.endDate || ""}" /></label></div>${note(t("life.symptoms"), t("life.symptomsPlaceholder"))}`;
+    case "habits": return `${title(t("life.habitName"), t("life.habitPlaceholder"))}${note()}`;
+    case "tasks": return `${title(t("life.taskName"))}<div class="form-grid">${select("category", t("common.type"), ["task", "shopping"])}${date(t("life.dueDate"))}</div>${note()}`;
+    case "moods": return `<div class="form-grid">${date(t("common.date"), true)}<label><span>${t("life.mood")}</span><select name="mood">${["😊","🥰","😌","🥺","😔","😴","😤"].map((mood) => `<option ${item.mood === mood ? "selected" : ""}>${mood}</option>`).join("")}</select></label></div>${title(t("life.moodTitle"), t("life.moodPlaceholder"))}${note()}`;
+    case "us": return `${title(t("life.memoryName"))}<div class="form-grid">${select("category", t("common.type"), ["memory", "goal"])}${date()}</div>${note()}`;
+    case "recipes": return `${title(t("life.recipeName"))}${note(t("life.ingredients"), t("life.ingredientsPlaceholder"))}<label><span>${t("life.preparation")}</span><textarea name="details" placeholder="${t("life.preparationPlaceholder")}">${escapeHTML(item.details || "")}</textarea></label>`;
+    case "duas": return `${title(t("life.duaName"))}${note(t("life.duaText"), t("life.duaPlaceholder"))}`;
+    case "health": return `${title(t("life.healthName"))}<div class="form-grid">${select("category", t("common.type"), ["medication", "allergy", "contact", "doctor"])}${date()}</div>${note(t("life.details"))}`;
+    case "finance": return `${title(t("life.financeName"))}${select("category", t("common.type"), ["expense", "goal"])}<div class="form-grid"><label><span>${t("life.amount")}</span><input name="amount" type="number" inputmode="decimal" min="0" step="0.01" value="${item.amount || ""}" /></label><label><span>${t("life.target")}</span><input name="target" type="number" inputmode="decimal" min="0" step="0.01" value="${item.target || ""}" /></label></div>${date()}${note()}`;
+    case "birthdays": return `${title(t("life.personName"))}<div class="form-grid">${select("category", t("common.type"), ["birthday", "gift"])}${date(t("common.date"), true)}</div>${note(t("life.giftIdea"), t("life.giftPlaceholder"))}`;
+    case "motivation": return `${title(t("life.message"), t("life.messagePlaceholder"))}`;
+    default: return title();
+  }
+}
+
+function openLifeForm(module, id = null) {
+  const existing = id ? state.lifeItems.find((entry) => entry.id === id) : null;
+  const item = existing || { module, title: "", note: "", date: module === "moods" ? localISO(new Date()) : "", category: module === "tasks" ? "task" : "" };
+  openDialog(t(`life.${module}`), existing ? t("life.edit") : t("life.new"), `<form class="dialog-form" id="life-form">${lifeFormFields(module, item)}<div class="dialog-actions">${existing ? `<button class="danger-button" type="button" data-action="delete-life" data-id="${existing.id}">${t("common.delete")}</button>` : ""}<button class="soft-button dialog-close" type="button">${t("common.cancel")}</button><button class="solid-button" type="submit">${t("common.save")}</button></div></form>`);
+  document.querySelector("#life-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const values = Object.fromEntries(new FormData(event.currentTarget));
+    const record = { ...item, ...values, module, id: existing?.id || crypto.randomUUID(), updatedAt: new Date().toISOString() };
+    if (existing) state.lifeItems = state.lifeItems.map((entry) => entry.id === existing.id ? record : entry);
+    else state.lifeItems.push(record);
+    await queueSave();
+    closeDialog();
+    showToast(t("life.saved"));
+    renderLife();
+  });
+}
+
+async function toggleLifeItem(id) {
+  const item = state.lifeItems.find((entry) => entry.id === id);
+  if (!item) return;
+  if (item.module === "habits") {
+    const today = localISO(new Date());
+    state.lifeChecks[today] ||= {};
+    state.lifeChecks[today][id] = !state.lifeChecks[today][id];
+  } else {
+    item.done = !item.done;
+  }
+  await queueSave();
+  renderLife();
+}
+
 function renderSettings() {
   viewContainer.innerHTML = `
     ${headerHTML(t("settings.eyebrow"), t("nav.settings"), t("settings.subtitle"))}
@@ -586,7 +754,7 @@ function renderSettings() {
 
 function renderCurrentView() {
   if (!state) return;
-  const renderers = { today: renderToday, calendar: renderCalendar, diary: renderDiary, watch: renderWatch, prayer: renderPrayer, settings: renderSettings };
+  const renderers = { today: renderToday, calendar: renderCalendar, diary: renderDiary, watch: renderWatch, prayer: renderPrayer, life: renderLife, settings: renderSettings };
   (renderers[currentView] || renderToday)();
 }
 
@@ -821,10 +989,13 @@ document.addEventListener("click", async (event) => {
   const close = event.target.closest(".dialog-close");
   if (close) return closeDialog();
   const nav = event.target.closest("[data-view]");
-  if (nav) return setView(nav.dataset.view);
+  if (nav) {
+    if (nav.dataset.lifeModule) activeLifeModule = nav.dataset.lifeModule;
+    return setView(nav.dataset.view);
+  }
   const action = event.target.closest("[data-action]");
   if (!action || !state) return;
-  const { id, date, prayer, filter, sort, type } = action.dataset;
+  const { id, date, prayer, filter, sort, type, module } = action.dataset;
   switch (action.dataset.action) {
     case "lock": lockApp(); break;
     case "new-event": openEventForm(null, date || selectedDate); break;
@@ -845,6 +1016,15 @@ document.addEventListener("click", async (event) => {
     case "toggle-prayer": await togglePrayer(date, prayer); break;
     case "prayer-prev": prayerDate = localISO(addDays(parseISO(prayerDate), -1)); renderPrayer(); break;
     case "prayer-next": prayerDate = localISO(addDays(parseISO(prayerDate), 1)); renderPrayer(); break;
+    case "life-module": activeLifeModule = module; renderLife(); break;
+    case "new-life": openLifeForm(module); break;
+    case "edit-life": {
+      const item = state.lifeItems.find((entry) => entry.id === id);
+      if (item) openLifeForm(item.module, id);
+      break;
+    }
+    case "delete-life": await deleteById("lifeItems", id, t("life.deleted")); break;
+    case "toggle-life": await toggleLifeItem(id); break;
     case "export-backup": exportBackup(); break;
     case "import-backup": backupFile.click(); break;
     case "change-pin": openPinForm(); break;

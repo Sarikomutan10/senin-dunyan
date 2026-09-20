@@ -437,6 +437,11 @@ input:focus, textarea:focus, select:focus {
 .hadith-text { margin: .35rem 0 .9rem; color: #392330; font: 500 1.14rem/1.65 var(--serif); }
 .hadith-source { margin: 0; color: var(--muted); font-size: .76rem; }
 
+.motivation-card { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 1rem; padding: 1.15rem 1.25rem; background: linear-gradient(135deg, rgba(255,249,228,.94), rgba(255,255,255,.88)); }
+.motivation-card .motivation-sun { color: #c9852f; font-size: 1.8rem; }
+.motivation-card .eyebrow { margin-bottom: .25rem; color: #9a6a20; }
+.motivation-card p:last-child { margin: 0; color: #4d3742; font: 500 1rem/1.45 var(--serif); }
+
 .prayer-summary { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 1rem; }
 .progress-ring { --progress: 0deg; display: grid; place-items: center; width: 5.2rem; height: 5.2rem; border-radius: 50%; background: conic-gradient(var(--rose) var(--progress), var(--rose-soft) 0); }
 .progress-ring::before { content: ""; grid-area: 1/1; width: 4rem; height: 4rem; border-radius: 50%; background: #fff; }
@@ -529,6 +534,34 @@ input:focus, textarea:focus, select:focus {
 .settings-card p { margin: 0 0 1rem; color: var(--muted); font-size: .8rem; line-height: 1.55; }
 .button-row { display: flex; flex-wrap: wrap; gap: .55rem; }
 
+.motivation-hero { display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 1rem; margin-bottom: 1rem; padding: 1.25rem 1.4rem; color: #fffdf6; background: linear-gradient(135deg, #7d294f, #4b1835); }
+.motivation-hero > span { color: #f1cc83; font-size: 2.4rem; }
+.motivation-hero .eyebrow { margin-bottom: .28rem; color: #f1cc83; }
+.motivation-hero h2 { margin: 0; font: 500 clamp(1.2rem, 3vw, 1.65rem)/1.35 var(--serif); }
+.life-module-grid { display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap: .65rem; margin-bottom: 1rem; }
+.life-module { position: relative; display: grid; justify-items: start; gap: .42rem; min-height: 6.6rem; padding: .85rem; border: 1px solid var(--line); border-radius: 1rem; color: var(--ink); background: rgba(255,255,255,.82); cursor: pointer; text-align: left; transition: .18s ease; }
+.life-module:hover { transform: translateY(-2px); box-shadow: 0 .8rem 1.8rem rgba(74,25,51,.08); }
+.life-module > span { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: .65rem; color: #fff; background: var(--module-color); font-size: 1rem; }
+.life-module strong { font-size: .78rem; line-height: 1.25; }
+.life-module small { position: absolute; top: .72rem; right: .72rem; min-width: 1.5rem; padding: .2rem .38rem; border-radius: 999px; color: var(--muted); background: var(--paper-soft); text-align: center; }
+.life-module.active { color: #fff; border-color: transparent; background: linear-gradient(145deg, color-mix(in srgb, var(--module-color) 82%, #43102e), #43102e); box-shadow: 0 .8rem 1.8rem rgba(74,25,51,.14); }
+.life-module.active small { color: #fff; background: rgba(255,255,255,.15); }
+.life-panel { padding: 1.2rem; }
+.life-panel-heading { align-items: flex-end; }
+.life-panel-heading .eyebrow { margin-bottom: .28rem; color: var(--rose); }
+.life-panel-heading h2 { font-size: 1.45rem; }
+.life-entry-list { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: .65rem; }
+.life-entry { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: .75rem; min-height: 5.2rem; padding: .8rem; border: 1px solid var(--line); border-radius: 1rem; background: #fff; }
+.life-entry.done { opacity: .68; background: #faf7f8; }
+.life-entry.done h3 { text-decoration: line-through; }
+.life-entry-icon, .life-check { display: grid; place-items: center; width: 2.35rem; height: 2.35rem; border: 0; border-radius: .72rem; color: #fff; background: var(--module-color, var(--wine)); }
+.life-check { border: 1px solid rgba(74,25,51,.18); color: #fff; background: var(--wine); cursor: pointer; font-weight: 800; }
+.life-entry:not(.done) .life-check { color: transparent; background: var(--paper-soft); }
+.life-entry-copy { min-width: 0; }
+.life-entry-copy h3 { margin: 0; overflow: hidden; font-size: .9rem; text-overflow: ellipsis; white-space: nowrap; }
+.life-entry-copy p { margin: .22rem 0 0; color: var(--muted); font-size: .73rem; }
+.life-entry-copy small { display: -webkit-box; overflow: hidden; margin-top: .3rem; color: #6b5360; font-size: .72rem; line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+
 .app-dialog {
   width: min(92vw, 34rem);
   max-height: min(88svh, 48rem);
@@ -586,6 +619,7 @@ input:focus, textarea:focus, select:focus {
   .dashboard-grid, .calendar-layout, .prayer-page-grid { grid-template-columns: 1fr; }
   .selected-day { position: static; }
   .media-list { grid-template-columns: 1fr; }
+  .life-module-grid { grid-template-columns: repeat(4, minmax(0,1fr)); }
 }
 
 @media (max-width: 430px) {
@@ -605,7 +639,7 @@ input:focus, textarea:focus, select:focus {
   .view-header { align-items: center; margin-bottom: 1.15rem; }
   .view-header h1 { font-size: 2.25rem; }
   .view-subtitle { font-size: .82rem; }
-  .bottom-nav { position: fixed; z-index: 10; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(5, 1fr); padding: .4rem .35rem max(.4rem, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: rgba(255,250,248,.96); backdrop-filter: blur(18px); }
+  .bottom-nav { position: fixed; z-index: 10; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(6, 1fr); padding: .4rem .35rem max(.4rem, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: rgba(255,250,248,.96); backdrop-filter: blur(18px); }
   .bottom-nav .nav-button { display: grid; place-items: center; gap: .1rem; min-height: 3.35rem; padding: .25rem; border-radius: .75rem; color: #88727d; text-align: center; }
   .bottom-nav .nav-button > span { width: auto; color: inherit; font-size: 1.05rem; }
   .bottom-nav .nav-button small { font-size: .61rem; font-weight: 720; }
@@ -623,6 +657,13 @@ input:focus, textarea:focus, select:focus {
   .view-header > div:first-child { min-width: 0; }
   .media-tabs { gap: .25rem; padding: .3rem; }
   .media-tab { padding: .45rem .35rem; font-size: .72rem; }
+  .motivation-card { grid-template-columns: auto minmax(0,1fr); }
+  .motivation-card .section-link { grid-column: 2; justify-self: start; }
+  .life-module-grid { grid-template-columns: repeat(3, minmax(0,1fr)); gap: .45rem; }
+  .life-module { min-height: 6rem; padding: .7rem; }
+  .life-module strong { font-size: .72rem; }
+  .life-entry-list { grid-template-columns: 1fr; }
+  .life-panel-heading { align-items: center; }
   .header-actions .hide-mobile { display: none; }
   .toast { right: .75rem; bottom: calc(5rem + env(safe-area-inset-bottom)); left: .75rem; max-width: none; }
 }
