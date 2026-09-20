@@ -12,7 +12,7 @@
 - MCU, Harry Potter, Avatar, Naruto, One Piece ve kişisel izleme listesi dahil 213 başlangıç kaydı
 - Beş vakit namaz takibi
 - Kaynak bilgili günlük hadis
-- İstek listesi, regl döngüsü, alışkanlıklar, görevler, ruh hali ve tarifler
+- Görsel ve ürün bağlantısı destekli istek listesi; regl döngüsü, alışkanlıklar, görevler, ruh hali ve tarifler
 - Ortak anılar ve hedefler, kişisel dualar, sağlık bilgileri ve finans takibi
 - Doğum günü/hediye planlayıcısı ve günlük motivasyon mesajları
 - 21 Eylül 2026 doğum günü sayacı ve özel mesajı

@@ -218,6 +218,46 @@ function escapeHTML(value = "") {
     .replaceAll("'", "&#039;");
 }
 
+function safeExternalURL(value = "") {
+  try {
+    const url = new URL(String(value).trim());
+    return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+
+function safeImageURL(value = "") {
+  const image = String(value).trim();
+  if (/^data:image\/(?:jpeg|png|webp|gif);base64,[a-z0-9+/=]+$/i.test(image)) return image;
+  return safeExternalURL(image);
+}
+
+function compressWishImage(file) {
+  return new Promise((resolve, reject) => {
+    if (!file?.size || !file.type.startsWith("image/")) return reject(new Error("invalid"));
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("read"));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error("image"));
+      image.onload = () => {
+        const scale = Math.min(1, 640 / Math.max(image.naturalWidth, image.naturalHeight));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+        const context = canvas.getContext("2d");
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", .76));
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 function bytesToBase64(bytes) {
   let binary = "";
   for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]);
@@ -659,9 +699,11 @@ function lifeItemHTML(item) {
   const checkable = item.module === "habits" || item.module === "tasks" || item.module === "duas" || (item.module === "us" && item.category === "goal");
   const done = item.module === "habits" ? Boolean(state.lifeChecks?.[today]?.[item.id]) : Boolean(item.done);
   const title = item.module === "moods" ? `${item.mood || "😊"} ${item.title || t("life.moodEntry")}` : item.module === "cycle" ? t("life.cycleEntry") : item.id === "birthday-her" ? t("life.myBirthday") : item.title;
+  const imageURL = item.module === "wishes" ? safeImageURL(item.image) : "";
+  const productURL = item.module === "wishes" ? safeExternalURL(item.link) : "";
   return `<article class="life-entry ${done ? "done" : ""}">
-    ${checkable ? `<button class="life-check" data-action="toggle-life" data-id="${item.id}" aria-label="${t("life.toggle")}">${done ? "✓" : ""}</button>` : `<span class="life-entry-icon" style="--module-color:${module.color}">${module.icon}</span>`}
-    <div class="life-entry-copy"><h3>${escapeHTML(title)}</h3>${lifeItemMeta(item) ? `<p>${escapeHTML(lifeItemMeta(item))}</p>` : ""}${item.note ? `<small>${escapeHTML(item.note)}</small>` : ""}${item.details ? `<small>${escapeHTML(item.details)}</small>` : ""}</div>
+    ${imageURL ? `<img class="wish-thumb" src="${escapeHTML(imageURL)}" alt="" />` : checkable ? `<button class="life-check" data-action="toggle-life" data-id="${item.id}" aria-label="${t("life.toggle")}">${done ? "✓" : ""}</button>` : `<span class="life-entry-icon" style="--module-color:${module.color}">${module.icon}</span>`}
+    <div class="life-entry-copy"><h3>${escapeHTML(title)}</h3>${lifeItemMeta(item) ? `<p>${escapeHTML(lifeItemMeta(item))}</p>` : ""}${item.note ? `<small>${escapeHTML(item.note)}</small>` : ""}${item.details ? `<small>${escapeHTML(item.details)}</small>` : ""}${productURL ? `<a class="wish-link" href="${escapeHTML(productURL)}" target="_blank" rel="noopener noreferrer">${t("life.openLink")} ↗</a>` : ""}</div>
     <div class="row-actions"><button class="tiny-button" data-action="edit-life" data-id="${item.id}" aria-label="${t("common.edit")}">✎</button><button class="tiny-button" data-action="delete-life" data-id="${item.id}" aria-label="${t("common.delete")}">×</button></div>
   </article>`;
 }
@@ -685,7 +727,11 @@ function lifeFormFields(module, item) {
   const date = (label = t("common.date"), required = false) => `<label><span>${label}</span><input type="date" name="date" value="${item.date || ""}" ${required ? "required" : ""} /></label>`;
   const select = (name, label, options) => `<label><span>${label}</span><select name="${name}">${options.map((value) => `<option value="${value}" ${item[name] === value ? "selected" : ""}>${t(`life.option.${value}`)}</option>`).join("")}</select></label>`;
   switch (module) {
-    case "wishes": return `${title(t("life.wishName"))}<div class="form-grid">${select("category", t("common.type"), ["sweets", "fashion", "beauty", "book", "other"])}${date(t("life.wishDate"))}</div>${note()}`;
+    case "wishes": {
+      const existingImage = safeImageURL(item.image);
+      const remoteImage = existingImage && !existingImage.startsWith("data:") ? existingImage : "";
+      return `${title(t("life.wishName"))}<div class="form-grid">${select("category", t("common.type"), ["sweets", "fashion", "beauty", "book", "other"])}${date(t("life.wishDate"))}</div><label><span>${t("life.productLink")}</span><input name="link" type="url" inputmode="url" value="${escapeHTML(item.link || "")}" placeholder="https://…" /></label><label><span>${t("life.imageLink")}</span><input name="imageUrl" type="url" inputmode="url" value="${escapeHTML(remoteImage)}" placeholder="https://…/bild.jpg" /></label><label><span>${t("life.uploadImage")}</span><input name="imageFile" type="file" accept="image/*" /><small class="field-hint">${t("life.imageHint")}</small></label>${existingImage ? `<div class="wish-image-preview"><img src="${escapeHTML(existingImage)}" alt="" /><label><input type="checkbox" name="removeImage" /> <span>${t("life.removeImage")}</span></label></div>` : ""}${note()}`;
+    }
     case "cycle": return `<div class="form-grid">${date(t("life.cycleStart"), true)}<label><span>${t("life.cycleEnd")}</span><input type="date" name="endDate" value="${item.endDate || ""}" /></label></div>${note(t("life.symptoms"), t("life.symptomsPlaceholder"))}`;
     case "habits": return `${title(t("life.habitName"), t("life.habitPlaceholder"))}${note()}`;
     case "tasks": return `${title(t("life.taskName"))}<div class="form-grid">${select("category", t("common.type"), ["task", "shopping"])}${date(t("life.dueDate"))}</div>${note()}`;
@@ -707,7 +753,28 @@ function openLifeForm(module, id = null) {
   openDialog(t(`life.${module}`), existing ? t("life.edit") : t("life.new"), `<form class="dialog-form" id="life-form">${lifeFormFields(module, item)}<div class="dialog-actions">${existing ? `<button class="danger-button" type="button" data-action="delete-life" data-id="${existing.id}">${t("common.delete")}</button>` : ""}<button class="soft-button dialog-close" type="button">${t("common.cancel")}</button><button class="solid-button" type="submit">${t("common.save")}</button></div></form>`);
   document.querySelector("#life-form").addEventListener("submit", async (event) => {
     event.preventDefault();
-    const values = Object.fromEntries(new FormData(event.currentTarget));
+    const formData = new FormData(event.currentTarget);
+    const values = Object.fromEntries(formData);
+    if (module === "wishes") {
+      const rawLink = String(values.link || "").trim();
+      if (rawLink && !safeExternalURL(rawLink)) return showToast(t("life.invalidLink"));
+      values.link = safeExternalURL(rawLink);
+      let image = item.image || "";
+      if (values.removeImage === "on") image = "";
+      const rawImageURL = String(values.imageUrl || "").trim();
+      if (rawImageURL && !safeImageURL(rawImageURL)) return showToast(t("life.invalidImage"));
+      if (rawImageURL) image = safeImageURL(rawImageURL);
+      const imageFile = formData.get("imageFile");
+      if (imageFile?.size) {
+        if (imageFile.size > 12 * 1024 * 1024) return showToast(t("life.imageTooLarge"));
+        try { image = await compressWishImage(imageFile); }
+        catch { return showToast(t("life.invalidImage")); }
+      }
+      values.image = image;
+      delete values.imageUrl;
+      delete values.imageFile;
+      delete values.removeImage;
+    }
     const record = { ...item, ...values, module, id: existing?.id || crypto.randomUUID(), updatedAt: new Date().toISOString() };
     if (existing) state.lifeItems = state.lifeItems.map((entry) => entry.id === existing.id ? record : entry);
     else state.lifeItems.push(record);
