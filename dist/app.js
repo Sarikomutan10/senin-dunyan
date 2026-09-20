@@ -859,7 +859,9 @@ function cycleInsightHTML(items) {
 }
 
 function lifeModuleButton([key, entry]) {
-  return `<button class="life-module ${activeLifeModule === key ? "active" : ""}" data-action="life-module" data-module="${key}" style="--module-color:${entry.color}"><span>${entry.icon}</span><strong>${t(`life.${key}`)}</strong><small>${moduleItems(key).length}</small></button>`;
+  const active = activeLifeModule === key;
+  const activeStyle = active ? `;color:#fff;border-color:transparent;background:linear-gradient(145deg,${entry.color},var(--wine))` : "";
+  return `<button class="life-module ${active ? "active" : ""}" data-action="life-module" data-module="${key}" style="--module-color:${entry.color}${activeStyle}"><span>${entry.icon}</span><strong>${t(`life.${key}`)}</strong><small>${moduleItems(key).length}</small></button>`;
 }
 
 function renderLife() {
@@ -1488,5 +1490,5 @@ async function initializeAccess() {
 initializeAccess();
 
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js?v=14"));
+  window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js?v=15"));
 }
