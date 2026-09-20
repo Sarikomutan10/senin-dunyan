@@ -332,7 +332,8 @@ function personalGiftSeeds(updatedAt = new Date().toISOString()) {
     ["story-together-2020", "Zusammengekommen · Birlikte olduğumuz gün", "2020-12-05"],
     ["story-proposal-2025", "Heiratsantrag · Evlilik teklifi", "2025-09-06"],
     ["story-isteme-2025", "Kız isteme · Das Familienversprechen", "2025-09-13"],
-    ["story-engagement-2025", "Verlobung · Nişan", "2025-09-20"]
+    ["story-engagement-2025", "Verlobung · Nişan", "2025-09-20"],
+    ["story-civil-wedding-2027", "Standesamt · Resmî nikâh", "2027-04-16"]
   ].map(([id, title, date]) => ({ id, module: "story", title, date, note: "", image: "", updatedAt }));
   const coupons = [
     "Gemeinsam einkaufen gehen",
@@ -390,7 +391,7 @@ function initialState(name) {
     lifeChecks: {},
     dashboardHidden: {},
     prayerLocation: null,
-    lifeVersion: 4,
+    lifeVersion: 5,
     updatedAt: new Date().toISOString()
   };
 }
@@ -432,6 +433,12 @@ function applyDataMigrations() {
     const ids = new Set(state.lifeItems.map((item) => item.id));
     personalGiftSeeds().forEach((item) => { if (!ids.has(item.id)) state.lifeItems.push(item); });
     state.lifeVersion = 4;
+    changed = true;
+  }
+  if ((state.lifeVersion || 0) < 5) {
+    const ids = new Set(state.lifeItems.map((item) => item.id));
+    personalGiftSeeds().forEach((item) => { if (!ids.has(item.id)) state.lifeItems.push(item); });
+    state.lifeVersion = 5;
     changed = true;
   }
   if ((state.ratingScaleVersion || 0) < 2) {
@@ -1482,5 +1489,5 @@ async function initializeAccess() {
 initializeAccess();
 
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js?v=11"));
+  window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js?v=12"));
 }
