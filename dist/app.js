@@ -1,6 +1,6 @@
 "use strict";
 
-const STORAGE_KEY = "senin-dunyan-vault-v1";
+const STORAGE_KEY = "senin-dunyan-vault-v2";
 const LANGUAGE_KEY = "senin-dunyan-language";
 const BIRTHDAY = "2026-09-21";
 const i18n = window.SENIN_DUNYAN_I18N;
