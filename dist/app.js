@@ -85,8 +85,17 @@ const lifeModules = {
   health: { icon: "+", color: "#3f8f72" },
   finance: { icon: "€", color: "#94732c" },
   birthdays: { icon: "✦", color: "#9a4771" },
-  motivation: { icon: "☀", color: "#c9852f" }
+  motivation: { icon: "☀", color: "#c9852f" },
+  photos: { icon: "▣", color: "#9f4c6c" },
+  reasons: { icon: "21", color: "#b13c6e" },
+  letters: { icon: "✉", color: "#73528d" },
+  capsules: { icon: "⌛", color: "#8a6836" },
+  story: { icon: "◇", color: "#aa5f4d" },
+  coupons: { icon: "✂", color: "#3f8f72" },
+  love: { icon: "♥", color: "#bb315f" }
 };
+
+const giftModuleKeys = ["photos", "reasons", "letters", "capsules", "story", "coupons", "love"];
 
 const motivationKeys = Array.from({ length: 12 }, (_, index) => `motivation.${index + 1}`);
 
@@ -166,6 +175,9 @@ let watchFilter = "all";
 let watchTypeFilter = "all";
 let watchSort = "desc";
 let activeLifeModule = "wishes";
+let searchQuery = "";
+let prayerTimes = null;
+let qiblaDirection = null;
 let saveQueue = Promise.resolve();
 let toastTimer = null;
 let autoLockTimer = null;
@@ -258,6 +270,25 @@ function compressWishImage(file) {
   });
 }
 
+function readStoredAudio(file) {
+  return new Promise((resolve, reject) => {
+    if (!file?.size || !file.type.startsWith("audio/") || file.size > 3 * 1024 * 1024) return reject(new Error("audio"));
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("read"));
+    reader.onload = () => resolve(reader.result);
+    reader.readAsDataURL(file);
+  });
+}
+
+function safeAudioURL(value = "") {
+  const audio = String(value).trim();
+  return /^data:audio\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+$/i.test(audio) ? audio : "";
+}
+
+function applyTheme() {
+  document.body.dataset.theme = state?.profile?.theme || "wine";
+}
+
 function bytesToBase64(bytes) {
   let binary = "";
   for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]);
@@ -284,7 +315,7 @@ function initialState(name) {
   const createdAt = new Date().toISOString();
   return {
     version: 1,
-    profile: { name: name.trim(), birthday: BIRTHDAY, createdAt: new Date().toISOString() },
+    profile: { name: name.trim(), birthday: BIRTHDAY, theme: "wine", image: "", createdAt: new Date().toISOString() },
     events: [
       {
         id: "civil-wedding-2027-04-16",
@@ -307,7 +338,9 @@ function initialState(name) {
       { id: "birthday-her", module: "birthdays", title: "Mein Geburtstag", category: "birthday", date: BIRTHDAY, note: "", updatedAt: createdAt }
     ],
     lifeChecks: {},
-    lifeVersion: 2,
+    dashboardHidden: {},
+    prayerLocation: null,
+    lifeVersion: 3,
     updatedAt: new Date().toISOString()
   };
 }
@@ -335,6 +368,14 @@ function applyDataMigrations() {
     const removedPresetIds = new Set(["wish-raffaello", "wish-kinder", "wish-snickers"]);
     state.lifeItems = state.lifeItems.filter((item) => !removedPresetIds.has(item.id));
     state.lifeVersion = 2;
+    changed = true;
+  }
+  if ((state.lifeVersion || 0) < 3) {
+    state.profile.theme ||= "wine";
+    state.profile.image ||= "";
+    state.dashboardHidden ||= {};
+    state.prayerLocation ||= null;
+    state.lifeVersion = 3;
     changed = true;
   }
   if ((state.ratingScaleVersion || 0) < 2) {
@@ -417,12 +458,14 @@ function enterApp() {
   authScreen.hidden = true;
   app.hidden = false;
   document.body.classList.add("app-open");
+  applyTheme();
   currentView = "today";
   updateNavigation();
   renderCurrentView();
   resetAutoLock();
   registerWebMCP();
   launchBirthdayCelebration();
+  setTimeout(checkReminders, 1200);
 }
 
 function launchBirthdayCelebration() {
@@ -477,7 +520,7 @@ function birthdayHTML() {
   const birthday = parseISO(BIRTHDAY);
   const distance = Math.round((birthday - today) / 86400000);
   if (distance > 0) {
-    return `<article class="surface birthday-card"><p class="eyebrow">${t("birthday.until")}</p><h2>${t("birthday.daysLeft", { count: distance })}</h2><p>${t("birthday.approaches")}</p><div class="countdown-row"><div class="countdown-chip"><strong>${distance}</strong><small>${t("birthday.days")}</small></div><div class="countdown-chip"><strong>21</strong><small>${t("birthday.september")}</small></div><div class="countdown-chip"><strong>♡</strong><small>${t("birthday.yours")}</small></div></div></article>`;
+    return `<article class="surface birthday-card"><p class="eyebrow">${t("birthday.until")}</p><h2>${distance === 1 ? t("birthday.oneDayLeft") : t("birthday.daysLeft", { count: distance })}</h2><p>${t("birthday.approaches")}</p><div class="countdown-row"><div class="countdown-chip"><strong>${distance}</strong><small>${t("birthday.days")}</small></div><div class="countdown-chip"><strong>21</strong><small>${t("birthday.september")}</small></div><div class="countdown-chip"><strong>♡</strong><small>${t("birthday.yours")}</small></div></div></article>`;
   }
   if (distance === 0) {
     return `<article class="surface birthday-card"><p class="eyebrow">${t("birthday.yourDay")}</p><h2>${t("birthday.happy")}</h2><p>${t("birthday.message")}</p><div class="birthday-message"><strong>${t("birthday.love")}</strong><span>${t("birthday.always")}</span></div></article>`;
@@ -502,7 +545,17 @@ function getDailyMotivation() {
 }
 
 function eventsForDate(date) {
-  return state.events.filter((event) => event.startDate <= date && (event.endDate || event.startDate) >= date);
+  const target = parseISO(date);
+  return state.events.filter((event) => {
+    if (!event.repeat || event.repeat === "none") return event.startDate <= date && (event.endDate || event.startDate) >= date;
+    if (date < event.startDate || (event.repeatUntil && date > event.repeatUntil)) return false;
+    const start = parseISO(event.startDate);
+    const days = Math.round((target - start) / 86400000);
+    if (event.repeat === "daily") return days >= 0;
+    if (event.repeat === "weekly") return days >= 0 && days % 7 === 0;
+    if (event.repeat === "monthly") return target.getDate() === start.getDate();
+    return false;
+  });
 }
 
 function eventTime(event) {
@@ -522,34 +575,38 @@ function renderToday() {
   const greeting = hour < 11 ? t("today.morning") : hour < 18 ? t("today.day") : t("today.evening");
   const checked = prayers.filter((prayer) => state.prayers[today]?.[prayer.id]).length;
   const hadith = getDailyHadith();
-  const upcoming = state.events
-    .filter((event) => (event.endDate || event.startDate) >= today)
-    .sort((a, b) => a.startDate.localeCompare(b.startDate) || (a.startTime || "").localeCompare(b.startTime || ""))
-    .slice(0, 4);
+  const upcoming = [];
+  for (let offset = 0; offset < 60 && upcoming.length < 4; offset += 1) {
+    const occurrenceDate = localISO(addDays(parseISO(today), offset));
+    eventsForDate(occurrenceDate).forEach((event) => {
+      if (upcoming.length < 4) upcoming.push({ ...event, startDate: occurrenceDate, endDate: occurrenceDate });
+    });
+  }
 
   viewContainer.innerHTML = `
-    ${headerHTML(t("nav.today"), `${greeting}, ${escapeHTML(state.profile.name)}`, formatDate(new Date()), `<button class="icon-button" data-action="lock" aria-label="${t("common.lock")}">⌁</button>`)}
+    ${headerHTML(t("nav.today"), `${greeting}, ${escapeHTML(state.profile.name)}`, formatDate(new Date()), `${safeImageURL(state.profile.image) ? `<img class="profile-avatar" src="${escapeHTML(safeImageURL(state.profile.image))}" alt="" />` : ""}<button class="icon-button" data-action="lock" aria-label="${t("common.lock")}">⌁</button>`)}
     <div class="dashboard-grid">
       <div class="stack">
-        ${birthdayHTML()}
-        <section class="surface hadith-card">
+        <div class="dashboard-card ${state.dashboardHidden?.birthday ? "dashboard-hidden" : ""}">${birthdayHTML()}</div>
+        <section class="surface hadith-card dashboard-card ${state.dashboardHidden?.hadith ? "dashboard-hidden" : ""}">
           <div class="section-heading"><div><h2>${t("today.hadith")}</h2><p>${t("today.hadithHint")}</p></div><span class="hadith-mark" aria-hidden="true">“</span></div>
           <p class="hadith-text">${uiLanguage === "de" ? i18n.hadithDe[hadiths.indexOf(hadith)] : hadith.text}</p>
           <p class="hadith-source">${hadith.source}</p>
         </section>
-        <section class="surface motivation-card">
+        <section class="surface motivation-card dashboard-card ${state.dashboardHidden?.motivation ? "dashboard-hidden" : ""}">
           <span class="motivation-sun" aria-hidden="true">☀</span>
           <div><p class="eyebrow">${t("life.dailyMotivation")}</p><p>${escapeHTML(getDailyMotivation())}</p></div>
           <button class="section-link" data-view="life" data-life-module="motivation">${t("common.details")}</button>
         </section>
+        <section class="surface love-note-card dashboard-card ${state.dashboardHidden?.love ? "dashboard-hidden" : ""}"><span aria-hidden="true">♡</span><div><p class="eyebrow">${t("gift.loveToday")}</p><p>${escapeHTML(getDailyLove())}</p></div><button class="section-link" data-view="life" data-life-module="love">${t("common.details")}</button></section>
       </div>
       <div class="stack">
-        <section class="surface surface-inner">
+        <section class="surface surface-inner dashboard-card ${state.dashboardHidden?.prayers ? "dashboard-hidden" : ""}">
           <div class="section-heading"><div><h2>${t("today.prayers")}</h2><p>${t("today.completed", { count: checked })}</p></div><button class="section-link" data-view="prayer">${t("common.details")}</button></div>
           <div class="prayer-summary"><div class="progress-ring" style="--progress:${checked * 72}deg"><strong>${checked}/5</strong></div><p class="view-subtitle">${t("today.prayerHint")}</p></div>
           <div class="prayer-mini-list">${prayers.map((prayer) => `<button class="prayer-mini ${state.prayers[today]?.[prayer.id] ? "done" : ""}" data-action="toggle-prayer" data-prayer="${prayer.id}" data-date="${today}"><span>${state.prayers[today]?.[prayer.id] ? "✓" : prayer.symbol}</span>${prayerName(prayer)}</button>`).join("")}</div>
         </section>
-        <section class="surface surface-inner">
+        <section class="surface surface-inner dashboard-card ${state.dashboardHidden?.upcoming ? "dashboard-hidden" : ""}">
           <div class="section-heading"><div><h2>${t("today.upcoming")}</h2><p>${t("today.fromCalendar")}</p></div><button class="section-link" data-action="new-event" data-date="${today}">${t("today.addNew")}</button></div>
           <div class="event-list">${upcoming.length ? upcoming.map((event) => eventRowHTML(event)).join("") : emptyHTML("◇", t("today.noUpcoming"))}</div>
         </section>
@@ -598,7 +655,7 @@ function renderDiary() {
   const entries = [...state.diary].sort((a, b) => b.date.localeCompare(a.date) || b.updatedAt.localeCompare(a.updatedAt));
   viewContainer.innerHTML = `
     ${headerHTML(t("diary.eyebrow"), t("nav.diary"), t("diary.subtitle"), `<button class="solid-button" data-action="new-diary">+ <span class="hide-mobile">${t("diary.new")}</span></button>`)}
-    <div class="diary-grid">${entries.length ? entries.map((entry) => `<article class="surface diary-card" data-action="edit-diary" data-id="${entry.id}"><span class="mood">${entry.mood}</span><time>${formatDate(entry.date, { day: "numeric", month: "long", year: "numeric" })}</time><h2>${escapeHTML(entry.title || t("diary.defaultTitle"))}</h2><p>${escapeHTML(entry.body)}</p></article>`).join("") : emptyHTML("✎", t("diary.empty"))}</div>`;
+    <div class="diary-grid">${entries.length ? entries.map((entry) => `<article class="surface diary-card" data-action="edit-diary" data-id="${entry.id}"><span class="mood">${entry.mood}</span><time>${formatDate(entry.date, { day: "numeric", month: "long", year: "numeric" })}${entry.audio ? " · 🎙" : ""}</time><h2>${escapeHTML(entry.title || t("diary.defaultTitle"))}</h2><p>${escapeHTML(entry.body)}</p></article>`).join("") : emptyHTML("✎", t("diary.empty"))}</div>`;
 }
 
 function renderWatch() {
@@ -640,6 +697,7 @@ function renderPrayer() {
   const week = Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
   viewContainer.innerHTML = `
     ${headerHTML(t("prayer.eyebrow"), t("prayer.title"), t("prayer.subtitle"))}
+    ${prayerToolsHTML()}
     <div class="prayer-page-grid">
       <section class="surface surface-inner">
         <div class="date-switcher"><button class="icon-button" data-action="prayer-prev" aria-label="${t("prayer.previousDay")}">‹</button><strong>${formatDate(prayerDate)}</strong><button class="icon-button" data-action="prayer-next" aria-label="${t("prayer.nextDay")}">›</button></div>
@@ -657,10 +715,16 @@ function renderPrayer() {
         }).join("")}</div>
       </section>
     </div>`;
+  if (!prayerTimes && state.prayerLocation) setTimeout(() => loadPrayerTimes(false), 0);
 }
 
 function moduleItems(module) {
-  return (state.lifeItems || []).filter((item) => item.module === module).sort((a, b) => (b.date || b.updatedAt || "").localeCompare(a.date || a.updatedAt || ""));
+  const items = (state.lifeItems || []).filter((item) => item.module === module);
+  if (module === "wishes") {
+    const rank = { high: 0, medium: 1, low: 2 };
+    return items.sort((a, b) => Number(Boolean(a.done)) - Number(Boolean(b.done)) || (rank[a.priority] ?? 1) - (rank[b.priority] ?? 1) || a.title.localeCompare(b.title));
+  }
+  return items.sort((a, b) => (b.date || b.updatedAt || "").localeCompare(a.date || a.updatedAt || ""));
 }
 
 function lifeModuleSummary(module, items) {
@@ -680,6 +744,9 @@ function lifeModuleSummary(module, items) {
     const goals = items.filter((item) => item.category === "goal").reduce((sum, item) => sum + Number(item.amount || 0), 0);
     return t("life.financeSummary", { expenses: formatRating(expenses), goals: formatRating(goals) });
   }
+  if (module === "reasons") return t("gift.reasonProgress", { count: Math.min(21, items.length) });
+  if (module === "coupons") return t("gift.couponProgress", { open: items.filter((item) => !item.done).length, total: items.length });
+  if (module === "capsules") return t("gift.capsuleProgress", { count: items.filter((item) => !item.date || item.date <= localISO(new Date())).length, total: items.length });
   return t("life.entryCount", { count: items.length });
 }
 
@@ -690,34 +757,62 @@ function lifeItemMeta(item) {
   if (item.category) parts.push(t(`life.option.${item.category}`));
   if (item.amount) parts.push(`${formatRating(Number(item.amount))} €`);
   if (item.target) parts.push(`${t("life.target")}: ${formatRating(Number(item.target))} €`);
+  if (item.price) parts.push(`${formatRating(Number(item.price))} €`);
+  if (item.priority) parts.push(t(`gift.priority.${item.priority}`));
   return parts.join(" · ");
 }
 
 function lifeItemHTML(item) {
   const module = lifeModules[item.module];
   const today = localISO(new Date());
-  const checkable = item.module === "habits" || item.module === "tasks" || item.module === "duas" || (item.module === "us" && item.category === "goal");
+  const checkable = item.module === "habits" || item.module === "tasks" || item.module === "duas" || item.module === "coupons" || (item.module === "us" && item.category === "goal");
   const done = item.module === "habits" ? Boolean(state.lifeChecks?.[today]?.[item.id]) : Boolean(item.done);
   const title = item.module === "moods" ? `${item.mood || "😊"} ${item.title || t("life.moodEntry")}` : item.module === "cycle" ? t("life.cycleEntry") : item.id === "birthday-her" ? t("life.myBirthday") : item.title;
-  const imageURL = item.module === "wishes" ? safeImageURL(item.image) : "";
+  const locked = item.module === "capsules" && item.date && item.date > today;
+  const imageURL = ["wishes", "photos", "story", "capsules"].includes(item.module) && !locked ? safeImageURL(item.image) : "";
   const productURL = item.module === "wishes" ? safeExternalURL(item.link) : "";
   return `<article class="life-entry ${done ? "done" : ""}">
-    ${imageURL ? `<img class="wish-thumb" src="${escapeHTML(imageURL)}" alt="" />` : checkable ? `<button class="life-check" data-action="toggle-life" data-id="${item.id}" aria-label="${t("life.toggle")}">${done ? "✓" : ""}</button>` : `<span class="life-entry-icon" style="--module-color:${module.color}">${module.icon}</span>`}
-    <div class="life-entry-copy"><h3>${escapeHTML(title)}</h3>${lifeItemMeta(item) ? `<p>${escapeHTML(lifeItemMeta(item))}</p>` : ""}${item.note ? `<small>${escapeHTML(item.note)}</small>` : ""}${item.details ? `<small>${escapeHTML(item.details)}</small>` : ""}${productURL ? `<a class="wish-link" href="${escapeHTML(productURL)}" target="_blank" rel="noopener noreferrer">${t("life.openLink")} ↗</a>` : ""}</div>
-    <div class="row-actions"><button class="tiny-button" data-action="edit-life" data-id="${item.id}" aria-label="${t("common.edit")}">✎</button><button class="tiny-button" data-action="delete-life" data-id="${item.id}" aria-label="${t("common.delete")}">×</button></div>
+    ${imageURL ? `<img class="wish-thumb" src="${escapeHTML(imageURL)}" alt="" />` : locked ? `<span class="life-entry-icon locked" style="--module-color:${module.color}">🔒</span>` : checkable ? `<button class="life-check" data-action="toggle-life" data-id="${item.id}" aria-label="${t("life.toggle")}">${done ? "✓" : ""}</button>` : `<span class="life-entry-icon" style="--module-color:${module.color}">${module.icon}</span>`}
+    <div class="life-entry-copy"><h3>${escapeHTML(title)}</h3>${lifeItemMeta(item) ? `<p>${escapeHTML(lifeItemMeta(item))}</p>` : ""}${locked ? `<small>${t("gift.lockedUntil", { date: formatDate(item.date, { day: "numeric", month: "long", year: "numeric" }) })}</small>` : `${item.note ? `<small>${escapeHTML(item.note)}</small>` : ""}${item.details ? `<small>${escapeHTML(item.details)}</small>` : ""}`}${productURL ? `<a class="wish-link" href="${escapeHTML(productURL)}" target="_blank" rel="noopener noreferrer">${t("life.openLink")} ↗</a>` : ""}${item.module === "wishes" ? `<button class="wish-bought ${done ? "done" : ""}" data-action="toggle-life" data-id="${item.id}">${done ? t("gift.bought") : t("gift.markBought")}</button>` : ""}</div>
+    <div class="row-actions">${locked ? "" : `<button class="tiny-button" data-action="edit-life" data-id="${item.id}" aria-label="${t("common.edit")}">✎</button>`}<button class="tiny-button" data-action="delete-life" data-id="${item.id}" aria-label="${t("common.delete")}">×</button></div>
   </article>`;
+}
+
+function getDailyLove() {
+  const messages = moduleItems("love");
+  if (messages.length) {
+    const day = Math.floor((new Date() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
+    return messages[day % messages.length].title;
+  }
+  return t(`gift.defaultLove${(new Date().getDate() % 5) + 1}`);
+}
+
+function cycleInsightHTML(items) {
+  const starts = items.map((item) => item.date).filter(Boolean).sort().slice(-7);
+  if (starts.length < 2) return "";
+  const intervals = starts.slice(1).map((date, index) => Math.round((parseISO(date) - parseISO(starts[index])) / 86400000));
+  const average = Math.round(intervals.reduce((sum, value) => sum + value, 0) / intervals.length);
+  return `<div class="cycle-insight"><div><strong>${average}</strong><span>${t("gift.averageDays")}</span></div><div class="cycle-bars">${intervals.map((days) => `<span style="height:${Math.max(28, Math.min(100, days * 2.6))}%" title="${days} ${t("birthday.days")}"></span>`).join("")}</div></div>`;
+}
+
+function lifeModuleButton([key, entry]) {
+  return `<button class="life-module ${activeLifeModule === key ? "active" : ""}" data-action="life-module" data-module="${key}" style="--module-color:${entry.color}"><span>${entry.icon}</span><strong>${t(`life.${key}`)}</strong><small>${moduleItems(key).length}</small></button>`;
 }
 
 function renderLife() {
   const items = moduleItems(activeLifeModule);
   const module = lifeModules[activeLifeModule];
+  const regularModules = Object.entries(lifeModules).filter(([key]) => !giftModuleKeys.includes(key));
+  const giftModules = Object.entries(lifeModules).filter(([key]) => giftModuleKeys.includes(key));
   viewContainer.innerHTML = `
     ${headerHTML(t("life.eyebrow"), t("nav.life"), t("life.subtitle"))}
     <section class="surface motivation-hero"><span>☀</span><div><p class="eyebrow">${t("life.dailyMotivation")}</p><h2>${escapeHTML(getDailyMotivation())}</h2></div></section>
-    <div class="life-module-grid">${Object.entries(lifeModules).map(([key, entry]) => `<button class="life-module ${activeLifeModule === key ? "active" : ""}" data-action="life-module" data-module="${key}" style="--module-color:${entry.color}"><span>${entry.icon}</span><strong>${t(`life.${key}`)}</strong><small>${moduleItems(key).length}</small></button>`).join("")}</div>
+    <p class="life-group-title">${t("gift.everyday")}</p><div class="life-module-grid">${regularModules.map(lifeModuleButton).join("")}</div>
+    <section class="surface gift-hero"><div><p class="eyebrow">${t("gift.forYou")}</p><h2>${escapeHTML(getDailyLove())}</h2></div><span aria-hidden="true">♡</span></section>
+    <p class="life-group-title">${t("gift.title")}</p><div class="life-module-grid gift-grid">${giftModules.map(lifeModuleButton).join("")}</div>
     <section class="surface life-panel">
       <div class="section-heading life-panel-heading"><div><p class="eyebrow">${module.icon} ${t(`life.${activeLifeModule}`)}</p><h2>${t(`life.${activeLifeModule}Title`)}</h2><p>${lifeModuleSummary(activeLifeModule, items)}</p></div><button class="solid-button" data-action="new-life" data-module="${activeLifeModule}">+ ${t("common.add")}</button></div>
-      <div class="life-entry-list">${items.length ? items.map(lifeItemHTML).join("") : emptyHTML(module.icon, t(`life.${activeLifeModule}Empty`))}</div>
+      ${activeLifeModule === "cycle" ? cycleInsightHTML(items) : ""}<div class="life-entry-list">${items.length ? items.map(lifeItemHTML).join("") : emptyHTML(module.icon, t(`life.${activeLifeModule}Empty`))}</div>
     </section>`;
 }
 
@@ -726,11 +821,14 @@ function lifeFormFields(module, item) {
   const note = (label = t("common.note"), placeholder = t("life.notePlaceholder")) => `<label><span>${label}</span><textarea name="note" placeholder="${placeholder}">${escapeHTML(item.note || "")}</textarea></label>`;
   const date = (label = t("common.date"), required = false) => `<label><span>${label}</span><input type="date" name="date" value="${item.date || ""}" ${required ? "required" : ""} /></label>`;
   const select = (name, label, options) => `<label><span>${label}</span><select name="${name}">${options.map((value) => `<option value="${value}" ${item[name] === value ? "selected" : ""}>${t(`life.option.${value}`)}</option>`).join("")}</select></label>`;
+  const imageFields = () => {
+    const existingImage = safeImageURL(item.image);
+    const remoteImage = existingImage && !existingImage.startsWith("data:") ? existingImage : "";
+    return `<label><span>${t("life.imageLink")}</span><input name="imageUrl" type="url" inputmode="url" value="${escapeHTML(remoteImage)}" placeholder="https://…/bild.jpg" /></label><label><span>${t("life.uploadImage")}</span><input name="imageFile" type="file" accept="image/*" /><small class="field-hint">${t("life.imageHint")}</small></label>${existingImage ? `<div class="wish-image-preview"><img src="${escapeHTML(existingImage)}" alt="" /><label><input type="checkbox" name="removeImage" /> <span>${t("life.removeImage")}</span></label></div>` : ""}`;
+  };
   switch (module) {
     case "wishes": {
-      const existingImage = safeImageURL(item.image);
-      const remoteImage = existingImage && !existingImage.startsWith("data:") ? existingImage : "";
-      return `${title(t("life.wishName"))}<div class="form-grid">${select("category", t("common.type"), ["sweets", "fashion", "beauty", "book", "other"])}${date(t("life.wishDate"))}</div><label><span>${t("life.productLink")}</span><input name="link" type="url" inputmode="url" value="${escapeHTML(item.link || "")}" placeholder="https://…" /></label><label><span>${t("life.imageLink")}</span><input name="imageUrl" type="url" inputmode="url" value="${escapeHTML(remoteImage)}" placeholder="https://…/bild.jpg" /></label><label><span>${t("life.uploadImage")}</span><input name="imageFile" type="file" accept="image/*" /><small class="field-hint">${t("life.imageHint")}</small></label>${existingImage ? `<div class="wish-image-preview"><img src="${escapeHTML(existingImage)}" alt="" /><label><input type="checkbox" name="removeImage" /> <span>${t("life.removeImage")}</span></label></div>` : ""}${note()}`;
+      return `${title(t("life.wishName"))}<div class="form-grid">${select("category", t("common.type"), ["sweets", "fashion", "beauty", "book", "other"])}${select("priority", t("gift.priority"), ["high", "medium", "low"])}</div><div class="form-grid">${date(t("life.wishDate"))}<label><span>${t("gift.price")}</span><input name="price" type="number" inputmode="decimal" min="0" step="0.01" value="${item.price || ""}" /></label></div><label><span>${t("life.productLink")}</span><input name="link" type="url" inputmode="url" value="${escapeHTML(item.link || "")}" placeholder="https://…" /></label>${imageFields()}${note()}`;
     }
     case "cycle": return `<div class="form-grid">${date(t("life.cycleStart"), true)}<label><span>${t("life.cycleEnd")}</span><input type="date" name="endDate" value="${item.endDate || ""}" /></label></div>${note(t("life.symptoms"), t("life.symptomsPlaceholder"))}`;
     case "habits": return `${title(t("life.habitName"), t("life.habitPlaceholder"))}${note()}`;
@@ -743,6 +841,13 @@ function lifeFormFields(module, item) {
     case "finance": return `${title(t("life.financeName"))}${select("category", t("common.type"), ["expense", "goal"])}<div class="form-grid"><label><span>${t("life.amount")}</span><input name="amount" type="number" inputmode="decimal" min="0" step="0.01" value="${item.amount || ""}" /></label><label><span>${t("life.target")}</span><input name="target" type="number" inputmode="decimal" min="0" step="0.01" value="${item.target || ""}" /></label></div>${date()}${note()}`;
     case "birthdays": return `${title(t("life.personName"))}<div class="form-grid">${select("category", t("common.type"), ["birthday", "gift"])}${date(t("common.date"), true)}</div>${note(t("life.giftIdea"), t("life.giftPlaceholder"))}`;
     case "motivation": return `${title(t("life.message"), t("life.messagePlaceholder"))}`;
+    case "photos": return `${title(t("gift.photoTitle"))}${date()}${imageFields()}${note(t("gift.photoText"))}`;
+    case "reasons": return `${title(t("gift.reasonLabel"), t("gift.reasonPlaceholder"))}`;
+    case "letters": return `${title(t("gift.letterTitle"))}${select("category", t("gift.openWhen"), ["sad", "miss", "courage", "sleep", "custom"])}${note(t("gift.letterText"), t("gift.letterPlaceholder"))}`;
+    case "capsules": return `${title(t("gift.capsuleTitle"))}${date(t("gift.unlockDate"), true)}${imageFields()}${note(t("gift.capsuleText"))}`;
+    case "story": return `${title(t("gift.storyTitle"))}${date(t("gift.storyDate"), true)}${imageFields()}${note(t("gift.storyText"))}`;
+    case "coupons": return `${title(t("gift.couponTitle"), t("gift.couponPlaceholder"))}${note(t("gift.couponDetails"))}`;
+    case "love": return `${title(t("gift.loveMessage"), t("gift.lovePlaceholder"))}`;
     default: return title();
   }
 }
@@ -755,10 +860,12 @@ function openLifeForm(module, id = null) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const values = Object.fromEntries(formData);
-    if (module === "wishes") {
+    if (["wishes", "photos", "capsules", "story"].includes(module)) {
+      if (module === "wishes") {
       const rawLink = String(values.link || "").trim();
       if (rawLink && !safeExternalURL(rawLink)) return showToast(t("life.invalidLink"));
       values.link = safeExternalURL(rawLink);
+      }
       let image = item.image || "";
       if (values.removeImage === "on") image = "";
       const rawImageURL = String(values.imageUrl || "").trim();
@@ -799,12 +906,111 @@ async function toggleLifeItem(id) {
   renderLife();
 }
 
+function searchEverything(query) {
+  const needle = query.trim().toLocaleLowerCase(uiLanguage === "tr" ? "tr-TR" : "de-DE");
+  if (!needle) return [];
+  const matches = (value) => String(value || "").toLocaleLowerCase(uiLanguage === "tr" ? "tr-TR" : "de-DE").includes(needle);
+  const results = [];
+  state.events.forEach((item) => { if ([item.title, item.notes, item.startDate].some(matches)) results.push({ kind: "event", id: item.id, title: item.title, meta: t("nav.calendar"), excerpt: item.notes || item.startDate }); });
+  state.diary.forEach((item) => { if ([item.title, item.body, item.date].some(matches)) results.push({ kind: "diary", id: item.id, title: item.title || t("diary.defaultTitle"), meta: t("nav.diary"), excerpt: item.body }); });
+  state.watchlist.forEach((item) => { if ([item.title, item.notes, item.collection].some(matches)) results.push({ kind: "media", id: item.id, title: item.title, meta: t("nav.watch"), excerpt: item.notes || item.collection }); });
+  state.lifeItems.forEach((item) => { if ([item.title, item.note, item.details].some(matches)) results.push({ kind: "life", id: item.id, module: item.module, title: item.title || t(`life.${item.module}`), meta: t(`life.${item.module}`), excerpt: item.note || item.details }); });
+  return results.slice(0, 80);
+}
+
+function renderSearch() {
+  const results = searchEverything(searchQuery);
+  viewContainer.innerHTML = `${headerHTML(t("search.eyebrow"), t("nav.search"), t("search.subtitle"))}<form class="search-box" id="global-search-form"><input id="global-search" name="query" value="${escapeHTML(searchQuery)}" placeholder="${t("search.placeholder")}" autocomplete="off" /><button class="solid-button" type="submit">${t("nav.search")}</button></form><div class="search-results">${searchQuery ? (results.length ? results.map((result) => `<button class="surface search-result" data-action="search-result" data-kind="${result.kind}" data-id="${result.id}" data-module="${result.module || ""}"><span>${escapeHTML(result.meta)}</span><strong>${escapeHTML(result.title)}</strong><small>${escapeHTML(result.excerpt || "")}</small></button>`).join("") : emptyHTML("⌕", t("search.none"))) : emptyHTML("⌕", t("search.start"))}</div>`;
+  document.querySelector("#global-search-form").addEventListener("submit", (event) => { event.preventDefault(); searchQuery = new FormData(event.currentTarget).get("query").trim(); renderSearch(); });
+}
+
+function reviewStats(year) {
+  const prefix = `${year}-`;
+  return {
+    diary: state.diary.filter((item) => item.date?.startsWith(prefix)),
+    moods: state.lifeItems.filter((item) => item.module === "moods" && item.date?.startsWith(prefix)),
+    memories: state.lifeItems.filter((item) => ["us", "story", "photos"].includes(item.module) && item.date?.startsWith(prefix)),
+    watched: state.watchlist.filter((item) => item.status === "watched" && item.updatedAt?.startsWith(String(year)))
+  };
+}
+
+function renderYearReview() {
+  const year = new Date().getFullYear();
+  const data = reviewStats(year);
+  const moodCounts = data.moods.reduce((counts, item) => ({ ...counts, [item.mood || "😊"]: (counts[item.mood || "😊"] || 0) + 1 }), {});
+  viewContainer.innerHTML = `<div class="year-review">${headerHTML(t("review.eyebrow"), `${t("review.title")} ${year}`, t("review.subtitle"), `<button class="solid-button" data-action="print-review">${t("review.pdf")}</button>`)}<div class="review-stats"><article><strong>${data.diary.length}</strong><span>${t("nav.diary")}</span></article><article><strong>${data.memories.length}</strong><span>${t("review.memories")}</span></article><article><strong>${data.watched.length}</strong><span>${t("watch.watched")}</span></article><article><strong>${Object.entries(moodCounts).sort((a,b) => b[1]-a[1])[0]?.[0] || "♡"}</strong><span>${t("life.moods")}</span></article></div><section class="surface review-section"><h2>${t("review.memories")}</h2>${data.memories.length ? data.memories.map((item) => `<div class="review-memory">${safeImageURL(item.image) ? `<img src="${escapeHTML(safeImageURL(item.image))}" alt="" />` : ""}<div><strong>${escapeHTML(item.title)}</strong><p>${escapeHTML(item.note || "")}</p></div></div>`).join("") : `<p>${t("review.empty")}</p>`}</section><section class="surface review-section"><h2>${t("nav.diary")}</h2>${data.diary.slice(0, 12).map((item) => `<article><strong>${item.mood} ${escapeHTML(item.title || formatDate(item.date))}</strong><p>${escapeHTML(item.body)}</p></article>`).join("") || `<p>${t("review.empty")}</p>`}</section></div>`;
+}
+
+function prayerToolsHTML() {
+  if (!prayerTimes) return `<section class="surface surface-inner prayer-tools"><div><p class="eyebrow">${t("prayer.locationTitle")}</p><h2>${t("prayer.timesAndQibla")}</h2><p>${t("prayer.locationText")}</p></div><button class="solid-button" data-action="load-prayer-times">${t("prayer.useLocation")}</button></section>`;
+  const names = [["Fajr", "sabah"], ["Dhuhr", "ogle"], ["Asr", "ikindi"], ["Maghrib", "aksam"], ["Isha", "yatsi"]];
+  return `<section class="surface surface-inner prayer-tools"><div class="section-heading"><div><h2>${t("prayer.todayTimes")}</h2><p>${t("prayer.timesHint")}</p></div><button class="soft-button" data-action="load-prayer-times">${t("prayer.refreshLocation")}</button></div><div class="prayer-time-grid">${names.map(([apiName, id]) => `<div><span>${t(`prayer.${id}`)}</span><strong>${escapeHTML(String(prayerTimes[apiName] || "").split(" ")[0])}</strong></div>`).join("")}</div><div class="qibla-card"><span class="qibla-arrow" style="transform:rotate(${Number(qiblaDirection || 0)}deg)">↑</span><div><strong>${t("prayer.qibla")}</strong><small>${Math.round(Number(qiblaDirection || 0))}° · ${t("prayer.qiblaHint")}</small></div></div></section>`;
+}
+
+function qiblaBearing(latitude, longitude) {
+  const toRad = (degree) => degree * Math.PI / 180;
+  const toDeg = (radian) => radian * 180 / Math.PI;
+  const lat1 = toRad(latitude), lat2 = toRad(21.4225), delta = toRad(39.8262 - longitude);
+  return (toDeg(Math.atan2(Math.sin(delta), Math.cos(lat1) * Math.tan(lat2) - Math.sin(lat1) * Math.cos(delta))) + 360) % 360;
+}
+
+async function loadPrayerTimes(requestLocation = true) {
+  try {
+    let location = state.prayerLocation;
+    if (requestLocation || !location) {
+      location = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition((position) => resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude }), reject, { enableHighAccuracy: false, timeout: 12000 }));
+      state.prayerLocation = { latitude: Number(location.latitude.toFixed(3)), longitude: Number(location.longitude.toFixed(3)) };
+      await queueSave();
+    }
+    const date = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date()).replaceAll("/", "-");
+    const response = await fetch(`https://api.aladhan.com/v1/timings/${date}?latitude=${encodeURIComponent(location.latitude)}&longitude=${encodeURIComponent(location.longitude)}&method=3`);
+    if (!response.ok) throw new Error("times");
+    const payload = await response.json();
+    prayerTimes = payload.data.timings;
+    qiblaDirection = qiblaBearing(location.latitude, location.longitude);
+    if (currentView === "prayer") renderPrayer();
+  } catch {
+    showToast(t("prayer.locationError"));
+  }
+}
+
+async function enableNotifications() {
+  if (!("Notification" in window)) return showToast(t("notifications.unsupported"));
+  const permission = await Notification.requestPermission();
+  showToast(permission === "granted" ? t("notifications.enabled") : t("notifications.denied"));
+  if (permission === "granted") checkReminders(true);
+}
+
+async function checkReminders(force = false) {
+  if (!("Notification" in window) || Notification.permission !== "granted" || !state) return;
+  const today = localISO(new Date());
+  const key = `reminders-${today}`;
+  if (!force && sessionStorage.getItem(key)) return;
+  const dueTasks = state.lifeItems.filter((item) => item.module === "tasks" && !item.done && item.date === today);
+  const birthdays = state.lifeItems.filter((item) => item.module === "birthdays" && item.date?.slice(5) === today.slice(5));
+  const messages = [...eventsForDate(today).map((item) => item.title), ...dueTasks.map((item) => item.title), ...birthdays.map((item) => item.title)];
+  if (!messages.length && !force) return;
+  const body = messages.length ? messages.slice(0, 5).join(" · ") : t("notifications.testBody");
+  try {
+    if (navigator.serviceWorker) (await navigator.serviceWorker.ready).showNotification(t("notifications.title"), { body, icon: "./assets/app-icon.svg" });
+    else new Notification(t("notifications.title"), { body });
+    sessionStorage.setItem(key, "yes");
+  } catch { showToast(t("notifications.error")); }
+}
+
 function renderSettings() {
+  const theme = state.profile.theme || "wine";
+  const avatar = safeImageURL(state.profile.image);
+  const dashboardCards = ["birthday", "hadith", "motivation", "love", "prayers", "upcoming"];
   viewContainer.innerHTML = `
     ${headerHTML(t("settings.eyebrow"), t("nav.settings"), t("settings.subtitle"))}
     <div class="settings-grid">
-      <section class="surface settings-card"><h2>${t("settings.profile")}</h2><p>${t("settings.profileText")}</p><form id="profile-form" class="dialog-form"><label><span>${t("auth.name")}</span><input name="name" value="${escapeHTML(state.profile.name)}" required /></label><button class="solid-button" type="submit">${t("common.save")}</button></form></section>
+      <section class="surface settings-card"><h2>${t("settings.profile")}</h2><p>${t("settings.profileText")}</p><form id="profile-form" class="dialog-form"><label><span>${t("auth.name")}</span><input name="name" value="${escapeHTML(state.profile.name)}" required /></label><button class="solid-button" type="submit">${t("common.save")}</button></form><form id="profile-image-form" class="profile-image-form">${avatar ? `<img class="settings-avatar" src="${escapeHTML(avatar)}" alt="" />` : `<span class="settings-avatar placeholder">${escapeHTML((state.profile.name || "S").charAt(0))}</span>`}<label><span>${t("settings.profileImage")}</span><input type="file" name="image" accept="image/*" /></label>${avatar ? `<label class="inline-check"><input type="checkbox" name="remove" /> ${t("settings.removeImage")}</label>` : ""}<button class="soft-button" type="submit">${t("common.save")}</button></form></section>
       <section class="surface settings-card"><h2>${t("common.language")}</h2><p>${t("settings.languageText")}</p><div class="language-switch settings-language"><button type="button" data-language="de">${t("common.german")}</button><button type="button" data-language="tr">${t("common.turkish")}</button></div></section>
+      <section class="surface settings-card"><h2>${t("settings.appearance")}</h2><p>${t("settings.appearanceText")}</p><div class="theme-grid">${[["wine","♥",t("settings.themeWine")],["rose","✿",t("settings.themeRose")],["ocean","≈",t("settings.themeOcean")],["night","☾",t("settings.themeNight")]].map(([key, icon, label]) => `<button class="theme-option ${theme === key ? "active" : ""}" data-action="set-theme" data-theme="${key}"><span class="theme-${key}">${icon}</span><strong>${label}</strong></button>`).join("")}</div></section>
+      <section class="surface settings-card"><h2>${t("settings.reminders")}</h2><p>${t("settings.remindersText")}</p><button class="solid-button" data-action="enable-notifications">${t("settings.enableReminders")}</button></section>
+      <section class="surface settings-card"><h2>${t("settings.dashboard")}</h2><p>${t("settings.dashboardText")}</p><div class="dashboard-toggles">${dashboardCards.map((key) => `<button class="dashboard-toggle ${state.dashboardHidden?.[key] ? "" : "active"}" data-action="toggle-dashboard" data-card="${key}"><span>${state.dashboardHidden?.[key] ? "○" : "✓"}</span>${t(`settings.card.${key}`)}</button>`).join("")}</div></section>
+      <section class="surface settings-card"><h2>${t("settings.yearReview")}</h2><p>${t("settings.yearReviewText")}</p><button class="solid-button" data-view="review">${t("settings.openReview")}</button></section>
       <section class="surface settings-card"><h2>${t("settings.backup")}</h2><p>${t("settings.backupText")}</p><div class="button-row"><button class="solid-button" data-action="export-backup">${t("settings.download")}</button><button class="soft-button" data-action="import-backup">${t("settings.upload")}</button></div></section>
       <section class="surface settings-card"><h2>${t("settings.pinLock")}</h2><p>${t("settings.pinText")}</p><div class="button-row"><button class="soft-button" data-action="change-pin">${t("settings.changePin")}</button><button class="soft-button" data-action="lock">${t("settings.lockNow")}</button></div></section>
       <section class="surface settings-card"><h2>${t("settings.privacy")}</h2><p>${t("settings.privacyText")}</p><span class="tag">${t("settings.encrypted")}</span></section>
@@ -817,11 +1023,25 @@ function renderSettings() {
     showToast(t("toast.nameUpdated"));
     renderSettings();
   });
+  document.querySelector("#profile-image-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    if (formData.get("remove") === "on") state.profile.image = "";
+    const image = formData.get("image");
+    if (image?.size) {
+      if (image.size > 12 * 1024 * 1024) return showToast(t("life.imageTooLarge"));
+      try { state.profile.image = await compressWishImage(image); }
+      catch { return showToast(t("settings.imageError")); }
+    }
+    await queueSave();
+    showToast(t("settings.imageSaved"));
+    renderSettings();
+  });
 }
 
 function renderCurrentView() {
   if (!state) return;
-  const renderers = { today: renderToday, calendar: renderCalendar, diary: renderDiary, watch: renderWatch, prayer: renderPrayer, life: renderLife, settings: renderSettings };
+  const renderers = { today: renderToday, search: renderSearch, calendar: renderCalendar, diary: renderDiary, watch: renderWatch, prayer: renderPrayer, life: renderLife, review: renderYearReview, settings: renderSettings };
   (renderers[currentView] || renderToday)();
 }
 
@@ -838,13 +1058,14 @@ function closeDialog() {
 
 function openEventForm(id = null, date = selectedDate) {
   const existing = id ? state.events.find((event) => event.id === id) : null;
-  const item = existing || { title: "", type: "work", startDate: date, endDate: date, startTime: "", endTime: "", notes: "" };
+  const item = existing || { title: "", type: "work", startDate: date, endDate: date, startTime: "", endTime: "", repeat: "none", repeatUntil: "", notes: "" };
   openDialog(existing ? t("form.record") : t("nav.calendar"), existing ? t("form.editRecord") : t("form.newRecord"), `
     <form class="dialog-form" id="event-form">
       <label><span>${t("common.title")}</span><input name="title" value="${escapeHTML(item.title)}" placeholder="${t("form.shiftPlaceholder")}" required /></label>
       <label><span>${t("common.type")}</span><select name="type">${Object.entries(eventTypes).map(([key]) => `<option value="${key}" ${item.type === key ? "selected" : ""}>${eventTypeLabel(key)}</option>`).join("")}</select></label>
       <div class="form-grid"><label><span>${t("common.start")}</span><input type="date" name="startDate" value="${item.startDate}" required /></label><label><span>${t("common.end")}</span><input type="date" name="endDate" value="${item.endDate || item.startDate}" required /></label></div>
       <div class="form-grid"><label><span>${t("common.startTime")}</span><input type="time" name="startTime" value="${item.startTime || ""}" /></label><label><span>${t("common.endTime")}</span><input type="time" name="endTime" value="${item.endTime || ""}" /></label></div>
+      <div class="form-grid"><label><span>${t("calendar.repeat")}</span><select name="repeat"><option value="none" ${!item.repeat || item.repeat === "none" ? "selected" : ""}>${t("calendar.repeatNone")}</option><option value="daily" ${item.repeat === "daily" ? "selected" : ""}>${t("calendar.repeatDaily")}</option><option value="weekly" ${item.repeat === "weekly" ? "selected" : ""}>${t("calendar.repeatWeekly")}</option><option value="monthly" ${item.repeat === "monthly" ? "selected" : ""}>${t("calendar.repeatMonthly")}</option></select></label><label><span>${t("calendar.repeatUntil")}</span><input type="date" name="repeatUntil" value="${item.repeatUntil || ""}" /></label></div>
       <label><span>${t("common.note")}</span><textarea name="notes" placeholder="${t("form.notePlaceholder")}">${escapeHTML(item.notes || "")}</textarea></label>
       <div class="dialog-actions"><button class="soft-button dialog-close" type="button">${t("common.cancel")}</button><button class="solid-button" type="submit">${t("common.save")}</button></div>
     </form>`);
@@ -872,11 +1093,24 @@ function openDiaryForm(id = null) {
       <div class="form-grid"><label><span>${t("common.date")}</span><input type="date" name="date" value="${item.date}" required /></label><label><span>${t("form.mood")}</span><select name="mood"><option ${item.mood === "😊" ? "selected" : ""}>😊</option><option ${item.mood === "🥰" ? "selected" : ""}>🥰</option><option ${item.mood === "😌" ? "selected" : ""}>😌</option><option ${item.mood === "🥺" ? "selected" : ""}>🥺</option><option ${item.mood === "😔" ? "selected" : ""}>😔</option><option ${item.mood === "😴" ? "selected" : ""}>😴</option></select></label></div>
       <label><span>${t("common.title")}</span><input name="title" value="${escapeHTML(item.title)}" placeholder="${t("form.todayTitle")}" /></label>
       <label><span>${t("form.thoughts")}</span><textarea name="body" placeholder="${t("form.dayPlaceholder")}" required>${escapeHTML(item.body)}</textarea></label>
+      ${safeAudioURL(item.audio) ? `<audio class="diary-audio" controls src="${escapeHTML(safeAudioURL(item.audio))}"></audio><label class="inline-check"><input type="checkbox" name="removeAudio" /> <span>${t("diary.removeAudio")}</span></label>` : ""}
+      <label><span>${t("diary.voiceNote")}</span><input type="file" name="audioFile" accept="audio/*" capture /><small class="field-hint">${t("diary.voiceHint")}</small></label>
       <div class="dialog-actions">${existing ? `<button class="danger-button" type="button" data-action="delete-diary" data-id="${existing.id}">${t("common.delete")}</button>` : ""}<button class="soft-button dialog-close" type="button">${t("common.cancel")}</button><button class="solid-button" type="submit">${t("common.save")}</button></div>
     </form>`);
   document.querySelector("#diary-form").addEventListener("submit", async (event) => {
     event.preventDefault();
-    const values = Object.fromEntries(new FormData(event.currentTarget));
+    const formData = new FormData(event.currentTarget);
+    const values = Object.fromEntries(formData);
+    let audio = item.audio || "";
+    if (values.removeAudio === "on") audio = "";
+    const audioFile = formData.get("audioFile");
+    if (audioFile?.size) {
+      try { audio = await readStoredAudio(audioFile); }
+      catch { return showToast(t("diary.audioError")); }
+    }
+    values.audio = audio;
+    delete values.audioFile;
+    delete values.removeAudio;
     const record = { ...item, ...values, id: existing?.id || crypto.randomUUID(), updatedAt: new Date().toISOString() };
     if (existing) state.diary = state.diary.map((entry) => entry.id === existing.id ? record : entry);
     else state.diary.push(record);
@@ -1062,7 +1296,7 @@ document.addEventListener("click", async (event) => {
   }
   const action = event.target.closest("[data-action]");
   if (!action || !state) return;
-  const { id, date, prayer, filter, sort, type, module } = action.dataset;
+  const { id, date, prayer, filter, sort, type, module, theme, card, kind } = action.dataset;
   switch (action.dataset.action) {
     case "lock": lockApp(); break;
     case "new-event": openEventForm(null, date || selectedDate); break;
@@ -1083,6 +1317,8 @@ document.addEventListener("click", async (event) => {
     case "toggle-prayer": await togglePrayer(date, prayer); break;
     case "prayer-prev": prayerDate = localISO(addDays(parseISO(prayerDate), -1)); renderPrayer(); break;
     case "prayer-next": prayerDate = localISO(addDays(parseISO(prayerDate), 1)); renderPrayer(); break;
+    case "load-prayer-times": await loadPrayerTimes(true); break;
+    case "enable-notifications": await enableNotifications(); break;
     case "life-module": activeLifeModule = module; renderLife(); break;
     case "new-life": openLifeForm(module); break;
     case "edit-life": {
@@ -1092,6 +1328,40 @@ document.addEventListener("click", async (event) => {
     }
     case "delete-life": await deleteById("lifeItems", id, t("life.deleted")); break;
     case "toggle-life": await toggleLifeItem(id); break;
+    case "search-result": {
+      if (kind === "event") {
+        const item = state.events.find((entry) => entry.id === id);
+        if (item) {
+          selectedDate = item.startDate;
+          calendarCursor = new Date(parseISO(item.startDate).getFullYear(), parseISO(item.startDate).getMonth(), 1);
+          setView("calendar");
+        }
+      } else if (kind === "diary") {
+        setView("diary");
+        openDiaryForm(id);
+      } else if (kind === "media") {
+        setView("watch");
+        openMediaForm(id);
+      } else if (kind === "life") {
+        activeLifeModule = module;
+        setView("life");
+        openLifeForm(module, id);
+      }
+      break;
+    }
+    case "set-theme":
+      state.profile.theme = theme;
+      applyTheme();
+      await queueSave();
+      renderSettings();
+      break;
+    case "toggle-dashboard":
+      state.dashboardHidden ||= {};
+      state.dashboardHidden[card] = !state.dashboardHidden[card];
+      await queueSave();
+      renderSettings();
+      break;
+    case "print-review": window.print(); break;
     case "export-backup": exportBackup(); break;
     case "import-backup": backupFile.click(); break;
     case "change-pin": openPinForm(); break;
