@@ -1489,5 +1489,5 @@ async function initializeAccess() {
 initializeAccess();
 
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js?v=12"));
+  window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js?v=13"));
 }
