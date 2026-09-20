@@ -264,13 +264,10 @@ function initialState(name) {
     ratingScaleVersion: 2,
     prayers: {},
     lifeItems: [
-      { id: "wish-raffaello", module: "wishes", title: "Raffaello", category: "sweets", note: "", date: "", updatedAt: createdAt },
-      { id: "wish-kinder", module: "wishes", title: "Kinder Riegel / Bueno", category: "sweets", note: "", date: "", updatedAt: createdAt },
-      { id: "wish-snickers", module: "wishes", title: "Snickers", category: "sweets", note: "", date: "", updatedAt: createdAt },
       { id: "birthday-her", module: "birthdays", title: "Mein Geburtstag", category: "birthday", date: BIRTHDAY, note: "", updatedAt: createdAt }
     ],
     lifeChecks: {},
-    lifeVersion: 1,
+    lifeVersion: 2,
     updatedAt: new Date().toISOString()
   };
 }
@@ -287,14 +284,17 @@ function applyDataMigrations() {
   if ((state.lifeVersion || 0) < 1) {
     const updatedAt = new Date().toISOString();
     const seeds = [
-      { id: "wish-raffaello", module: "wishes", title: "Raffaello", category: "sweets", note: "", date: "", updatedAt },
-      { id: "wish-kinder", module: "wishes", title: "Kinder Riegel / Bueno", category: "sweets", note: "", date: "", updatedAt },
-      { id: "wish-snickers", module: "wishes", title: "Snickers", category: "sweets", note: "", date: "", updatedAt },
       { id: "birthday-her", module: "birthdays", title: "Mein Geburtstag", category: "birthday", date: BIRTHDAY, note: "", updatedAt }
     ];
     const ids = new Set(state.lifeItems.map((item) => item.id));
     seeds.forEach((item) => { if (!ids.has(item.id)) state.lifeItems.push(item); });
     state.lifeVersion = 1;
+    changed = true;
+  }
+  if ((state.lifeVersion || 0) < 2) {
+    const removedPresetIds = new Set(["wish-raffaello", "wish-kinder", "wish-snickers"]);
+    state.lifeItems = state.lifeItems.filter((item) => !removedPresetIds.has(item.id));
+    state.lifeVersion = 2;
     changed = true;
   }
   if ((state.ratingScaleVersion || 0) < 2) {
