@@ -98,6 +98,7 @@ const lifeModules = {
 };
 
 const giftModuleKeys = ["photos", "reasons", "letters", "capsules", "story", "coupons", "love"];
+const hiddenLifeModuleKeys = ["letters", "capsules", "love"];
 
 const motivationKeys = Array.from({ length: 12 }, (_, index) => `motivation.${index + 1}`);
 
@@ -661,7 +662,6 @@ function renderToday() {
           <div><p class="eyebrow">${t("life.dailyMotivation")}</p><p>${escapeHTML(getDailyMotivation())}</p></div>
           <button class="section-link" data-view="life" data-life-module="motivation">${t("common.details")}</button>
         </section>
-        <section class="surface love-note-card dashboard-card ${state.dashboardHidden?.love ? "dashboard-hidden" : ""}"><span aria-hidden="true">♡</span><div><p class="eyebrow">${t("gift.loveToday")}</p><p>${escapeHTML(getDailyLove())}</p></div><button class="section-link" data-view="life" data-life-module="love">${t("common.details")}</button></section>
       </div>
       <div class="stack">
         <section class="surface surface-inner dashboard-card ${state.dashboardHidden?.prayers ? "dashboard-hidden" : ""}">
@@ -865,8 +865,8 @@ function lifeModuleButton([key, entry]) {
 function renderLife() {
   const items = moduleItems(activeLifeModule);
   const module = lifeModules[activeLifeModule];
-  const regularModules = Object.entries(lifeModules).filter(([key]) => !giftModuleKeys.includes(key));
-  const giftModules = Object.entries(lifeModules).filter(([key]) => giftModuleKeys.includes(key));
+  const regularModules = Object.entries(lifeModules).filter(([key]) => !giftModuleKeys.includes(key) && !hiddenLifeModuleKeys.includes(key));
+  const giftModules = Object.entries(lifeModules).filter(([key]) => giftModuleKeys.includes(key) && !hiddenLifeModuleKeys.includes(key));
   const addActions = activeLifeModule === "photos"
     ? `<div class="button-row"><button class="soft-button" data-action="bulk-photos">▣ ${t("gift.bulkPhotos")}</button><button class="solid-button" data-action="new-life" data-module="${activeLifeModule}">+ ${t("common.add")}</button></div>`
     : `<button class="solid-button" data-action="new-life" data-module="${activeLifeModule}">+ ${t("common.add")}</button>`;
@@ -874,7 +874,6 @@ function renderLife() {
     ${headerHTML(t("life.eyebrow"), t("nav.life"), t("life.subtitle"))}
     <section class="surface motivation-hero"><span>☀</span><div><p class="eyebrow">${t("life.dailyMotivation")}</p><h2>${escapeHTML(getDailyMotivation())}</h2></div></section>
     <p class="life-group-title">${t("gift.everyday")}</p><div class="life-module-grid">${regularModules.map(lifeModuleButton).join("")}</div>
-    <section class="surface gift-hero"><div><p class="eyebrow">${t("gift.forYou")}</p><h2>${escapeHTML(getDailyLove())}</h2></div><span aria-hidden="true">♡</span></section>
     <p class="life-group-title">${t("gift.title")}</p><div class="life-module-grid gift-grid">${giftModules.map(lifeModuleButton).join("")}</div>
     <section class="surface life-panel">
       <div class="section-heading life-panel-heading"><div><p class="eyebrow">${module.icon} ${t(`life.${activeLifeModule}`)}</p><h2>${t(`life.${activeLifeModule}Title`)}</h2><p>${lifeModuleSummary(activeLifeModule, items)}</p></div>${addActions}</div>
@@ -1084,7 +1083,7 @@ async function checkReminders(force = false) {
 function renderSettings() {
   const theme = state.profile.theme || "wine";
   const avatar = safeImageURL(state.profile.image);
-  const dashboardCards = ["birthday", "hadith", "motivation", "love", "prayers", "upcoming"];
+  const dashboardCards = ["birthday", "hadith", "motivation", "prayers", "upcoming"];
   viewContainer.innerHTML = `
     ${headerHTML(t("settings.eyebrow"), t("nav.settings"), t("settings.subtitle"))}
     <div class="settings-grid">
@@ -1489,5 +1488,5 @@ async function initializeAccess() {
 initializeAccess();
 
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js?v=13"));
+  window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js?v=14"));
 }

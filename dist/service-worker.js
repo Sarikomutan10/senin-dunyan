@@ -1,4 +1,4 @@
-const CACHE_NAME = "senin-dunyan-v13";
+const CACHE_NAME = "senin-dunyan-v14";
 const APP_FILES = ["./", "./index.html", "./styles.css", "./i18n.js", "./catalog.js", "./app.js", "./manifest.webmanifest", "./assets/app-icon.svg"];
 
 self.addEventListener("install", (event) => {
