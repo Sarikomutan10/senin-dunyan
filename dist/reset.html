@@ -21,6 +21,7 @@
       (async () => {
         localStorage.removeItem("senin-dunyan-vault-v1");
         localStorage.removeItem("senin-dunyan-vault-v2");
+        localStorage.removeItem("senin-dunyan-vault-v3");
         sessionStorage.clear();
         if ("caches" in window) {
           const keys = await caches.keys();
@@ -30,8 +31,8 @@
           const registrations = await navigator.serviceWorker.getRegistrations();
           await Promise.all(registrations.map((registration) => registration.unregister()));
         }
-        location.replace("./?pin-reset=20260920-v3");
-      })().catch(() => location.replace("./?pin-reset=20260920-v3"));
+        location.replace("./?pin-reset=fixed-21092001-v10");
+      })().catch(() => location.replace("./?pin-reset=fixed-21092001-v10"));
     </script>
   </body>
 </html>

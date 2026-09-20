@@ -1,7 +1,9 @@
 "use strict";
 
-const STORAGE_KEY = "senin-dunyan-vault-v2";
+const STORAGE_KEY = "senin-dunyan-vault-v3";
 const LANGUAGE_KEY = "senin-dunyan-language";
+const INITIAL_PIN = "21092001";
+const INITIAL_NAME = "Aşkım";
 const BIRTHDAY = "2026-09-21";
 const i18n = window.SENIN_DUNYAN_I18N;
 let uiLanguage = localStorage.getItem(LANGUAGE_KEY) === "tr" ? "tr" : "de";
@@ -1377,14 +1379,25 @@ dialog.addEventListener("cancel", (event) => { event.preventDefault(); closeDial
 
 translateStaticUI();
 
-if (localStorage.getItem(STORAGE_KEY)) {
+async function initializeAccess() {
+  if (!localStorage.getItem(STORAGE_KEY)) {
+    try {
+      await createVault(INITIAL_NAME, INITIAL_PIN);
+      state = null;
+      encryptionKey = null;
+      vaultSalt = null;
+    } catch {
+      setupForm.hidden = false;
+      unlockForm.hidden = true;
+      return showToast(t("toast.createFailed"));
+    }
+  }
   setupForm.hidden = true;
   unlockForm.hidden = false;
-} else {
-  setupForm.hidden = false;
-  unlockForm.hidden = true;
 }
 
+initializeAccess();
+
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js"));
+  window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js?v=10"));
 }
